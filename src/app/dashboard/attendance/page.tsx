@@ -9,7 +9,7 @@
  * Designed for <5 seconds per worker interaction.
  */
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Calendar as CalendarIcon,
@@ -102,7 +102,7 @@ export default function AttendancePage() {
   });
 
   // Build worker rows when site/date/employees change
-  useMemo(() => {
+  useEffect(() => {
     if (!selectedSiteId || employees.length === 0) {
       setWorkerRows([]);
       return;
