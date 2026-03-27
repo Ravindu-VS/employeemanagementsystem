@@ -17,6 +17,7 @@ import {
   MoreHorizontal,
   Eye,
   Edit,
+  Trash2,
   UserX,
   UserCheck,
   ChevronDown,
@@ -28,8 +29,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { getAllEmployees, deactivateEmployee, reactivateEmployee } from '@/services';
+import { getAllEmployees, deactivateEmployee, reactivateEmployee, deleteEmployee } from '@/services';
+import { createAuditLog } from '@/services/audit-service';
 import { useRequireRole } from '@/components/providers/auth-provider';
+import { useToast } from '@/components/ui/use-toast';
 import { formatDate } from '@/lib/date-utils';
 import { cn } from '@/lib/utils';
 import { ROUTES, USER_ROLES } from '@/constants';
@@ -47,11 +50,15 @@ const roleBadgeColors: Record<UserRole, string> = {
 };
 
 export default function EmployeesPage() {
-  const { isAuthorized } = useRequireRole(['owner', 'ceo', 'manager']);
+  const { isAuthorized, profile } = useRequireRole(['owner', 'ceo', 'manager', 'supervisor']);
+  const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const canManage = profile?.role === 'owner' || profile?.role === 'ceo' || profile?.role === 'manager';
 
   // Fetch employees
   const { 
@@ -109,9 +116,54 @@ export default function EmployeesPage() {
       } else {
         await reactivateEmployee(employee.uid);
       }
+      if (profile) {
+        createAuditLog({
+          userId: profile.uid,
+          userName: profile.displayName || profile.email,
+          userRole: profile.role,
+          action: 'update',
+          resource: 'employees',
+          resourceId: employee.uid,
+          newValue: { isActive: !employee.isActive },
+        });
+      }
       refetch();
     } catch (error) {
       console.error('Error toggling employee status:', error);
+    }
+  };
+
+  const handleDelete = async (employee: UserProfile) => {
+    if (!confirm(`Are you sure you want to permanently delete ${employee.displayName || 'this employee'}? This action cannot be undone.`)) {
+      return;
+    }
+    setDeletingId(employee.uid);
+    try {
+      await deleteEmployee(employee.uid);
+      if (profile) {
+        createAuditLog({
+          userId: profile.uid,
+          userName: profile.displayName || profile.email,
+          userRole: profile.role,
+          action: 'delete',
+          resource: 'employees',
+          resourceId: employee.uid,
+          newValue: { displayName: employee.displayName, role: employee.role },
+        });
+      }
+      toast({
+        title: 'Employee Deleted',
+        description: `${employee.displayName || 'Employee'} has been permanently deleted.`,
+      });
+      refetch();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete employee',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -129,12 +181,14 @@ export default function EmployeesPage() {
             Manage your workforce and employee records
           </p>
         </div>
-        <Link href={ROUTES.EMPLOYEES.CREATE}>
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" />
-            Add Employee
-          </Button>
-        </Link>
+        {canManage && (
+          <Link href={ROUTES.EMPLOYEES.CREATE}>
+            <Button className="gap-2">
+              <Plus className="h-4 w-4" />
+              Add Employee
+            </Button>
+          </Link>
+        )}
       </div>
 
       {/* Stats Cards */}
@@ -354,23 +408,36 @@ export default function EmployeesPage() {
                               <Eye className="h-4 w-4" />
                             </Button>
                           </Link>
-                          <Link href={ROUTES.EMPLOYEES.EDIT(employee.uid)}>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </Link>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="h-8 w-8 p-0"
-                            onClick={() => handleToggleStatus(employee)}
-                          >
-                            {employee.isActive ? (
-                              <UserX className="h-4 w-4 text-red-400" />
-                            ) : (
-                              <UserCheck className="h-4 w-4 text-green-400" />
-                            )}
-                          </Button>
+                          {canManage && (
+                            <>
+                              <Link href={ROUTES.EMPLOYEES.EDIT(employee.uid)}>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </Link>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-8 w-8 p-0"
+                                onClick={() => handleToggleStatus(employee)}
+                              >
+                                {employee.isActive ? (
+                                  <UserX className="h-4 w-4 text-red-400" />
+                                ) : (
+                                  <UserCheck className="h-4 w-4 text-green-400" />
+                                )}
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-8 w-8 p-0"
+                                onClick={() => handleDelete(employee)}
+                                disabled={deletingId === employee.uid}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-400" />
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

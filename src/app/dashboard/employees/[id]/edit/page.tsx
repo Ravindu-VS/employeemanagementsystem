@@ -33,6 +33,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { getEmployee, updateEmployee } from '@/services';
+import { createAuditLog } from '@/services/audit-service';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { ROUTES, USER_ROLES } from '@/constants';
@@ -66,7 +67,7 @@ export default function EditEmployeePage() {
   const params = useParams();
   const router = useRouter();
   const { toast } = useToast();
-  const { isAuthorized } = useRequireRole(['owner', 'ceo', 'manager']);
+  const { isAuthorized, profile } = useRequireRole(['owner', 'ceo', 'manager']);
   const employeeId = params.id as string;
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -140,6 +141,18 @@ export default function EditEmployeePage() {
       };
 
       await updateEmployee(employeeId, updateData as any);
+
+      if (profile) {
+        createAuditLog({
+          userId: profile.uid,
+          userName: profile.displayName || profile.email,
+          userRole: profile.role,
+          action: 'update',
+          resource: 'employees',
+          resourceId: employeeId,
+          newValue: { displayName: data.displayName, role: data.role },
+        });
+      }
 
       toast({
         title: 'Employee Updated',

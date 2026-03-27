@@ -1,16 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { db } from '@/lib/firebase/client';
-import { collection, query, orderBy, limit, getDocs, where, Timestamp } from 'firebase/firestore';
-import { COLLECTIONS } from '@/constants';
 import { formatDateTime, formatDate } from '@/lib/date-utils';
 import { AuditLog } from '@/types';
+import { getAuditLogs } from '@/services/audit-service';
 import { 
   Search, 
   Filter,
@@ -18,50 +16,11 @@ import {
   User,
   Clock,
   Activity,
-  ChevronLeft,
-  ChevronRight,
   RefreshCw,
   Download,
   Calendar,
   Loader2
 } from 'lucide-react';
-
-// Fetch audit logs from Firestore
-const fetchAuditLogs = async (filters: {
-  action?: string;
-  userId?: string;
-  startDate?: Date;
-  endDate?: Date;
-  pageSize: number;
-}): Promise<AuditLog[]> => {
-  let q = query(
-    collection(db, COLLECTIONS.AUDIT_LOGS),
-    orderBy('timestamp', 'desc'),
-    limit(filters.pageSize)
-  );
-
-  if (filters.action) {
-    q = query(q, where('action', '==', filters.action));
-  }
-
-  if (filters.userId) {
-    q = query(q, where('userId', '==', filters.userId));
-  }
-
-  if (filters.startDate) {
-    q = query(q, where('timestamp', '>=', Timestamp.fromDate(filters.startDate)));
-  }
-
-  if (filters.endDate) {
-    q = query(q, where('timestamp', '<=', Timestamp.fromDate(filters.endDate)));
-  }
-
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data(),
-  })) as AuditLog[];
-};
 
 // Action type badges
 const ACTION_TYPES = [
@@ -83,30 +42,43 @@ export default function AuditLogsPage() {
     start: '',
     end: '',
   });
-  const [pageSize] = useState(50);
 
-  // Fetch audit logs
+  // Fetch all recent audit logs (simple single-field orderBy, no compound indexes)
   const { data: logs = [], isLoading, refetch, isRefetching } = useQuery({
-    queryKey: ['audit-logs', actionFilter, dateRange],
-    queryFn: () => fetchAuditLogs({
-      action: actionFilter !== 'all' ? actionFilter : undefined,
-      startDate: dateRange.start ? new Date(dateRange.start) : undefined,
-      endDate: dateRange.end ? new Date(dateRange.end) : undefined,
-      pageSize,
-    }),
+    queryKey: ['audit-logs'],
+    queryFn: () => getAuditLogs(200),
   });
 
-  // Filter logs by search term
-  const filteredLogs = logs.filter(log => {
-    if (!searchTerm) return true;
-    const term = searchTerm.toLowerCase();
-    return (
-      log.action?.toLowerCase().includes(term) ||
-      log.resource?.toLowerCase().includes(term) ||
-      log.userId?.toLowerCase().includes(term) ||
-      log.userName?.toLowerCase().includes(term)
-    );
-  });
+  // All filtering done client-side to avoid Firestore compound index issues
+  const filteredLogs = useMemo(() => {
+    return (logs as AuditLog[]).filter(log => {
+      // Action filter
+      if (actionFilter !== 'all' && log.action !== actionFilter) return false;
+      // Date range filter
+      if (dateRange.start) {
+        const start = new Date(dateRange.start);
+        const logDate = log.timestamp instanceof Date ? log.timestamp : new Date(log.timestamp);
+        if (logDate < start) return false;
+      }
+      if (dateRange.end) {
+        const end = new Date(dateRange.end);
+        end.setHours(23, 59, 59, 999);
+        const logDate = log.timestamp instanceof Date ? log.timestamp : new Date(log.timestamp);
+        if (logDate > end) return false;
+      }
+      // Search term filter
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        return (
+          log.action?.toLowerCase().includes(term) ||
+          log.resource?.toLowerCase().includes(term) ||
+          log.userId?.toLowerCase().includes(term) ||
+          log.userName?.toLowerCase().includes(term)
+        );
+      }
+      return true;
+    });
+  }, [logs, actionFilter, dateRange, searchTerm]);
 
   const getActionColor = (action: string) => {
     switch (action) {
@@ -362,8 +334,8 @@ export default function AuditLogsPage() {
                           <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
                             <User className="h-3 w-3 text-primary" />
                           </div>
-                          <span className="text-sm truncate max-w-[100px]">
-                            {log.userId || 'System'}
+                          <span className="text-sm truncate max-w-[120px]">
+                            {log.userName || log.userId || 'System'}
                           </span>
                         </div>
                       </td>
@@ -379,24 +351,6 @@ export default function AuditLogsPage() {
             </div>
           )}
 
-          {/* Pagination */}
-          {filteredLogs.length > 0 && (
-            <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
-              <p className="text-sm text-muted-foreground">
-                Showing {filteredLogs.length} entries
-              </p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled>
-                  <ChevronLeft className="h-4 w-4" />
-                  Previous
-                </Button>
-                <Button variant="outline" size="sm" disabled>
-                  Next
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>

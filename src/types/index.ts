@@ -262,6 +262,9 @@ export interface WeeklyPayroll {
   bonuses: BonusEntry[];
   totalEarnings: number;
   
+  // Per-site breakdown (added for multi-site support)
+  siteBreakdowns?: SiteBreakdown[];
+  
   // Deductions
   advances: AdvanceDeduction[];
   loanDeductions: LoanDeduction[];
@@ -329,6 +332,60 @@ export type PaymentMethod =
   | 'upi';
 
 // =====================================================
+// PER-SITE PAYROLL TYPES
+// =====================================================
+
+/**
+ * Breakdown of one worker's attendance & pay at a single site
+ */
+export interface SiteBreakdown {
+  siteId: string;
+  siteName: string;
+  daysWorked: number;   // 0.5 increments (morning/evening)
+  otHours: number;
+  regularPay: number;   // daysWorked × dailyRate
+  otPay: number;        // otHours × otRate
+  totalPay: number;     // regularPay + otPay
+}
+
+/**
+ * Full payroll summary for one worker (across all sites)
+ */
+export interface WorkerPayrollSummary {
+  workerId: string;
+  workerName: string;
+  workerRole: UserRole;
+  dailyRate: number;
+  otRate: number;
+  siteBreakdowns: SiteBreakdown[];
+  totalDays: number;
+  totalOtHours: number;
+  grossSalary: number;
+  advances: AdvanceRequest[];   // un-deducted advances
+  totalAdvanceDeduction: number;
+  finalSalary: number;
+}
+
+/**
+ * Aggregated payroll total for one site
+ */
+export interface SitePayrollTotal {
+  siteId: string;
+  siteName: string;
+  totalPayroll: number;
+  workerCount: number;
+}
+
+/**
+ * Complete payroll report with workers, site totals, and grand total
+ */
+export interface PayrollReport {
+  workers: WorkerPayrollSummary[];
+  siteTotals: SitePayrollTotal[];
+  grandTotal: number;
+}
+
+// =====================================================
 // ADVANCE & LOAN TYPES
 // =====================================================
 
@@ -346,7 +403,9 @@ export interface AdvanceRequest {
   reviewedBy?: string;
   reviewedAt?: Date;
   reviewNotes?: string;
-  deductionWeekId?: string; // Week when deducted
+  deductThisWeek: boolean;      // true = deduct from current payroll
+  deductionWeek?: string;       // YYYY-MM-DD week for future deduction
+  deductionWeekId?: string;     // Week when actually deducted (legacy)
   isDeducted: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -584,3 +643,79 @@ export interface SiteReport {
   totalPayroll: number;
   averageAttendance: number;
 }
+
+// =====================================================
+// SETTINGS TYPES
+// =====================================================
+
+export interface CompanySettings {
+  companyName: string;
+  companyEmail: string;
+  companyPhone: string;
+  companyAddress: string;
+  companyWebsite: string;
+  currency: string;
+  timezone: string;
+}
+
+export interface PayrollSettings {
+  cycle: 'weekly' | 'biweekly' | 'monthly';
+  payrollStartDay: number; // 0=Sunday, 1=Monday, etc.
+  workingDaysPerWeek: number;
+  regularHoursPerDay: number;
+  otMultiplier: number;
+  holidayMultiplier: number;
+  maxAdvancePercent: number;
+  maxLoanEmis: number;
+  defaultInterestRate: number;
+  autoDeductAdvances: boolean;
+  autoDeductLoans: boolean;
+}
+
+export interface AttendanceSettings {
+  enableGeofence: boolean;
+  defaultGeofenceRadius: number;
+  allowHalfDay: boolean;
+  allowMultipleSessions: boolean;
+  autoCloseAfterHours: number;
+  minSessionMinutes: number;
+  lockPastAttendanceAfterPayroll: boolean;
+}
+
+export interface NotificationSettings {
+  emailEnabled: boolean;
+  inAppEnabled: boolean;
+  payrollAlerts: boolean;
+  advanceAlerts: boolean;
+  loanAlerts: boolean;
+  attendanceAlerts: boolean;
+}
+
+export type SettingsDocId = 'company' | 'payroll' | 'attendance' | 'notifications';
+
+// =====================================================
+// AUDIT EVENT TYPES
+// =====================================================
+
+export const AUDIT_EVENTS = {
+  EMPLOYEE_CREATED: 'EMPLOYEE_CREATED',
+  EMPLOYEE_UPDATED: 'EMPLOYEE_UPDATED',
+  EMPLOYEE_DELETED: 'EMPLOYEE_DELETED',
+  SITE_CREATED: 'SITE_CREATED',
+  SITE_UPDATED: 'SITE_UPDATED',
+  SITE_DELETED: 'SITE_DELETED',
+  ATTENDANCE_MARKED: 'ATTENDANCE_MARKED',
+  ATTENDANCE_UPDATED: 'ATTENDANCE_UPDATED',
+  PAYROLL_GENERATED: 'PAYROLL_GENERATED',
+  PAYROLL_APPROVED: 'PAYROLL_APPROVED',
+  PAYROLL_PAID: 'PAYROLL_PAID',
+  ADVANCE_CREATED: 'ADVANCE_CREATED',
+  ADVANCE_APPROVED: 'ADVANCE_APPROVED',
+  ADVANCE_REJECTED: 'ADVANCE_REJECTED',
+  LOAN_CREATED: 'LOAN_CREATED',
+  LOAN_APPROVED: 'LOAN_APPROVED',
+  USER_LOGIN: 'USER_LOGIN',
+  SETTINGS_UPDATED: 'SETTINGS_UPDATED',
+} as const;
+
+export type AuditEvent = typeof AUDIT_EVENTS[keyof typeof AUDIT_EVENTS];

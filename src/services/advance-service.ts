@@ -34,20 +34,28 @@ export async function getAdvance(advanceId: string): Promise<AdvanceRequest | nu
  * Get all pending advance requests
  */
 export async function getPendingAdvances(): Promise<AdvanceRequest[]> {
-  return getDocuments<AdvanceRequest>(COLLECTIONS.ADVANCES, [
+  const results = await getDocuments<AdvanceRequest>(COLLECTIONS.ADVANCES, [
     where('status', '==', 'pending'),
-    orderBy('requestedAt', 'asc'),
   ]);
+  return results.sort((a, b) => {
+    const aTime = a.requestedAt instanceof Date ? a.requestedAt.getTime() : 0;
+    const bTime = b.requestedAt instanceof Date ? b.requestedAt.getTime() : 0;
+    return aTime - bTime;
+  });
 }
 
 /**
  * Get advances for an employee
  */
 export async function getEmployeeAdvances(employeeId: string): Promise<AdvanceRequest[]> {
-  return getDocuments<AdvanceRequest>(COLLECTIONS.ADVANCES, [
+  const results = await getDocuments<AdvanceRequest>(COLLECTIONS.ADVANCES, [
     where('employeeId', '==', employeeId),
-    orderBy('requestedAt', 'desc'),
   ]);
+  return results.sort((a, b) => {
+    const aTime = a.requestedAt instanceof Date ? a.requestedAt.getTime() : 0;
+    const bTime = b.requestedAt instanceof Date ? b.requestedAt.getTime() : 0;
+    return bTime - aTime;
+  });
 }
 
 /**
@@ -86,6 +94,9 @@ export async function createAdvanceRequest(
     employeeName: string;
     amount: number;
     reason: string;
+    requestedAt?: string;         // ISO date string e.g. '2026-03-12'
+    deductThisWeek?: boolean;
+    deductionWeek?: string;
   }
 ): Promise<string> {
   // Validate amount
@@ -104,9 +115,14 @@ export async function createAdvanceRequest(
   }
   
   const advanceData: Omit<AdvanceRequest, 'id' | 'createdAt' | 'updatedAt'> = {
-    ...data,
-    requestedAt: new Date(),
+    employeeId: data.employeeId,
+    employeeName: data.employeeName,
+    amount: data.amount,
+    reason: data.reason,
+    requestedAt: data.requestedAt ? new Date(data.requestedAt + 'T12:00:00') : new Date(),
     status: 'pending',
+    deductThisWeek: data.deductThisWeek ?? true,
+    deductionWeek: data.deductionWeek,
     isDeducted: false,
   };
   
@@ -235,4 +251,36 @@ export async function getAdvanceStats(): Promise<{
     totalPending: pending.reduce((sum, a) => sum + a.amount, 0),
     totalApproved: approved.reduce((sum, a) => sum + a.amount, 0),
   };
+}
+
+/**
+ * Get advances eligible for payroll deduction in a given week.
+ * Returns approved, un-deducted advances where:
+ *   - deductThisWeek === true, OR
+ *   - deductionWeek matches the requested weekId
+ */
+export async function getAdvancesForPayrollWeek(
+  employeeId: string,
+  weekId: string
+): Promise<AdvanceRequest[]> {
+  const undeducted = await getDocuments<AdvanceRequest>(COLLECTIONS.ADVANCES, [
+    where('employeeId', '==', employeeId),
+    where('status', '==', 'approved'),
+    where('isDeducted', '==', false),
+  ]);
+
+  return undeducted.filter(
+    (adv) => adv.deductThisWeek === true || adv.deductionWeek === weekId
+  );
+}
+
+/**
+ * Get ALL approved un-deducted advances in one query.
+ * Used by the payroll page to display advances grouped by worker.
+ */
+export async function getAllPendingAdvances(): Promise<AdvanceRequest[]> {
+  return getDocuments<AdvanceRequest>(COLLECTIONS.ADVANCES, [
+    where('status', '==', 'approved'),
+    where('isDeducted', '==', false),
+  ]);
 }

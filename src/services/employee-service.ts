@@ -26,20 +26,27 @@ import type {
   EmployeeFilters,
 } from '@/types';
 
+// Firestore returns { id, ...data } — map id to uid for UserProfile
+function mapUser(data: any): UserProfile {
+  return { ...data, uid: data.uid || data.id };
+}
+
 /**
  * Get a single employee by ID
  */
 export async function getEmployee(employeeId: string): Promise<UserProfile | null> {
-  return getDocument<UserProfile>(COLLECTIONS.USERS, employeeId);
+  const doc = await getDocument<UserProfile>(COLLECTIONS.USERS, employeeId);
+  return doc ? mapUser(doc) : null;
 }
 
 /**
  * Get all employees
  */
 export async function getAllEmployees(): Promise<UserProfile[]> {
-  return getDocuments<UserProfile>(COLLECTIONS.USERS, [
+  const docs = await getDocuments<UserProfile>(COLLECTIONS.USERS, [
     orderBy('displayName', 'asc'),
   ]);
+  return docs.map(mapUser);
 }
 
 /**
@@ -79,33 +86,33 @@ export async function getEmployees(
  * Get employees by role
  */
 export async function getEmployeesByRole(role: UserRole): Promise<UserProfile[]> {
-  return getDocuments<UserProfile>(COLLECTIONS.USERS, [
+  const results = await getDocuments<UserProfile>(COLLECTIONS.USERS, [
     where('role', '==', role),
     where('isActive', '==', true),
-    orderBy('displayName', 'asc'),
   ]);
+  return results.map(mapUser).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
 }
 
 /**
  * Get employees assigned to a site
  */
 export async function getEmployeesBySite(siteId: string): Promise<UserProfile[]> {
-  return getDocuments<UserProfile>(COLLECTIONS.USERS, [
+  const results = await getDocuments<UserProfile>(COLLECTIONS.USERS, [
     where('assignedSites', 'array-contains', siteId),
     where('isActive', '==', true),
-    orderBy('displayName', 'asc'),
   ]);
+  return results.map(mapUser).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
 }
 
 /**
  * Get employees under a supervisor
  */
 export async function getEmployeesBySupervisor(supervisorId: string): Promise<UserProfile[]> {
-  return getDocuments<UserProfile>(COLLECTIONS.USERS, [
+  const results = await getDocuments<UserProfile>(COLLECTIONS.USERS, [
     where('supervisorId', '==', supervisorId),
     where('isActive', '==', true),
-    orderBy('displayName', 'asc'),
   ]);
+  return results.map(mapUser).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
 }
 
 /**
@@ -144,6 +151,13 @@ export async function activateEmployee(employeeId: string): Promise<void> {
   await updateDocument<UserProfile>(COLLECTIONS.USERS, employeeId, {
     isActive: true,
   });
+}
+
+/**
+ * Permanently delete an employee record
+ */
+export async function deleteEmployee(employeeId: string): Promise<void> {
+  await deleteDocument(COLLECTIONS.USERS, employeeId);
 }
 
 /**
@@ -224,10 +238,10 @@ export async function generateWorkerId(): Promise<string> {
  * Get active employees only
  */
 export async function getActiveEmployees(): Promise<UserProfile[]> {
-  return getDocuments<UserProfile>(COLLECTIONS.USERS, [
+  const results = await getDocuments<UserProfile>(COLLECTIONS.USERS, [
     where('isActive', '==', true),
-    orderBy('displayName', 'asc'),
   ]);
+  return results.map(mapUser).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
 }
 
 /**

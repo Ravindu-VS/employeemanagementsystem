@@ -24,8 +24,10 @@ import {
   addTime,
   subTime,
 } from '@/lib/date-utils';
-import { getEmployeeAttendanceSummary } from './attendance-service';
+import { getWorkerWeeklyAttendanceSummary, getWorkerWeeklyAttendanceBySite } from './attendance-service';
 import { getEmployee } from './employee-service';
+import { getAdvancesForPayrollWeek } from './advance-service';
+import { getActiveSites } from './site-service';
 import type { 
   WeeklyPayroll, 
   PayrollStatus, 
@@ -34,6 +36,7 @@ import type {
   AdvanceDeduction,
   LoanDeduction,
   OtherDeduction,
+  SiteBreakdown,
   PaginatedResponse, 
   PaginationParams,
   UserProfile,
@@ -66,10 +69,10 @@ export async function getEmployeePayrollForWeek(
  * Get all payrolls for a week
  */
 export async function getPayrollsForWeek(weekStartDate: string): Promise<WeeklyPayroll[]> {
-  return getDocuments<WeeklyPayroll>(COLLECTIONS.PAYROLL, [
+  const results = await getDocuments<WeeklyPayroll>(COLLECTIONS.PAYROLL, [
     where('weekStartDate', '==', weekStartDate),
-    orderBy('employeeName', 'asc'),
   ]);
+  return results.sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
 }
 
 /**
@@ -113,10 +116,11 @@ export async function getEmployeePayrollHistory(
 ): Promise<WeeklyPayroll[]> {
   const payrolls = await getDocuments<WeeklyPayroll>(COLLECTIONS.PAYROLL, [
     where('employeeId', '==', employeeId),
-    orderBy('weekStartDate', 'desc'),
   ]);
   
-  return payrolls.slice(0, limit);
+  return payrolls
+    .sort((a, b) => (b.weekStartDate || '').localeCompare(a.weekStartDate || ''))
+    .slice(0, limit);
 }
 
 /**
@@ -146,28 +150,52 @@ export async function generateEmployeePayroll(
     throw new Error('Payroll already exists for this week');
   }
   
-  // Get attendance summary for the week
-  const attendanceSummary = await getEmployeeAttendanceSummary(employeeId, {
-    start: weekStart,
-    end: weekEnd,
-  });
+  // Get per-site attendance breakdown
+  const workerId = employee.workerId || employee.uid;
+  const siteAttendance = await getWorkerWeeklyAttendanceBySite(workerId, weekStartStr, weekEndStr);
   
-  // Calculate earnings using dailyRate-based formula per spec:
-  // Salary = (daysWorked × dailyRate) + (otHours × otRate) - loanDeduction - advanceDeduction
+  // Get site names for display
+  const allSites = await getActiveSites();
+  const siteNameMap = new Map(allSites.map(s => [s.id, s.name]));
+  
+  // Calculate per-site earnings
   const dailyRate = employee.dailyRate || 0;
   const otRate = employee.otRate || 0;
-  const daysWorked = attendanceSummary.presentDays + (attendanceSummary.halfDays * 0.5);
-  const overtimeHours = attendanceSummary.overtimeHours;
   
-  const regularEarnings = daysWorked * dailyRate;
-  const overtimeEarnings = overtimeHours * otRate;
+  const siteBreakdowns: SiteBreakdown[] = Object.entries(siteAttendance).map(
+    ([siteId, data]) => {
+      const regularPay = data.daysWorked * dailyRate;
+      const otPay = data.otHours * otRate;
+      return {
+        siteId,
+        siteName: siteNameMap.get(siteId) || siteId,
+        daysWorked: data.daysWorked,
+        otHours: data.otHours,
+        regularPay,
+        otPay,
+        totalPay: regularPay + otPay,
+      };
+    }
+  );
   
-  // Calculate hours for record keeping
-  const regularHours = daysWorked * (PAYROLL_CONFIG.WEEK_START_DAY || 8);
+  // Aggregate totals across all sites
+  const daysWorked = siteBreakdowns.reduce((s, b) => s + b.daysWorked, 0);
+  const overtimeHours = siteBreakdowns.reduce((s, b) => s + b.otHours, 0);
+  const regularEarnings = siteBreakdowns.reduce((s, b) => s + b.regularPay, 0);
+  const overtimeEarnings = siteBreakdowns.reduce((s, b) => s + b.otPay, 0);
+  
+  const regularHours = daysWorked * 8;
   const totalHours = regularHours + overtimeHours;
   
-  // TODO: Get pending advances and loans
-  const advances: AdvanceDeduction[] = [];
+  // Get advance deductions for this week
+  const weekAdvances = await getAdvancesForPayrollWeek(employeeId, weekStartStr);
+  const advances: AdvanceDeduction[] = weekAdvances.map(adv => ({
+    advanceId: adv.id,
+    amount: adv.amount,
+    description: adv.reason || 'Advance deduction',
+  }));
+  
+  // TODO: Get pending loans
   const loanDeductions: LoanDeduction[] = [];
   const otherDeductions: OtherDeduction[] = [];
   
@@ -190,12 +218,14 @@ export async function generateEmployeePayroll(
     regularHours,
     overtimeHours,
     totalHours: regularHours + overtimeHours,
-    daysWorked: attendanceSummary.presentDays,
+    daysWorked,
     
     regularEarnings,
     overtimeEarnings,
     bonuses: [],
     totalEarnings,
+    
+    siteBreakdowns,
     
     advances,
     loanDeductions,

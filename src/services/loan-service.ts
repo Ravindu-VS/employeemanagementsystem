@@ -35,30 +35,42 @@ export async function getLoan(loanId: string): Promise<Loan | null> {
  * Get all pending loan requests
  */
 export async function getPendingLoans(): Promise<Loan[]> {
-  return getDocuments<Loan>(COLLECTIONS.LOANS, [
+  const results = await getDocuments<Loan>(COLLECTIONS.LOANS, [
     where('status', '==', 'pending'),
-    orderBy('createdAt', 'asc'),
   ]);
+  return results.sort((a, b) => {
+    const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
+    const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
+    return aTime - bTime;
+  });
 }
 
 /**
  * Get active loans
  */
 export async function getActiveLoans(): Promise<Loan[]> {
-  return getDocuments<Loan>(COLLECTIONS.LOANS, [
+  const results = await getDocuments<Loan>(COLLECTIONS.LOANS, [
     where('status', '==', 'active'),
-    orderBy('createdAt', 'desc'),
   ]);
+  return results.sort((a, b) => {
+    const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
+    const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
+    return bTime - aTime;
+  });
 }
 
 /**
  * Get loans for an employee
  */
 export async function getEmployeeLoans(employeeId: string): Promise<Loan[]> {
-  return getDocuments<Loan>(COLLECTIONS.LOANS, [
+  const results = await getDocuments<Loan>(COLLECTIONS.LOANS, [
     where('employeeId', '==', employeeId),
-    orderBy('createdAt', 'desc'),
   ]);
+  return results.sort((a, b) => {
+    const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
+    const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
+    return bTime - aTime;
+  });
 }
 
 /**

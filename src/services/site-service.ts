@@ -45,10 +45,10 @@ export async function getAllSites(): Promise<WorkSite[]> {
  * Get active sites only
  */
 export async function getActiveSites(): Promise<WorkSite[]> {
-  return getDocuments<WorkSite>(COLLECTIONS.SITES, [
+  const results = await getDocuments<WorkSite>(COLLECTIONS.SITES, [
     where('status', '==', 'active'),
-    orderBy('name', 'asc'),
   ]);
+  return results.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 }
 
 /**
@@ -87,21 +87,21 @@ export async function getSites(
  * Get sites by status
  */
 export async function getSitesByStatus(status: SiteStatus): Promise<WorkSite[]> {
-  return getDocuments<WorkSite>(COLLECTIONS.SITES, [
+  const results = await getDocuments<WorkSite>(COLLECTIONS.SITES, [
     where('status', '==', status),
-    orderBy('name', 'asc'),
   ]);
+  return results.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 }
 
 /**
  * Get sites managed by a supervisor
  */
 export async function getSitesBySupervisor(supervisorId: string): Promise<WorkSite[]> {
-  return getDocuments<WorkSite>(COLLECTIONS.SITES, [
+  const results = await getDocuments<WorkSite>(COLLECTIONS.SITES, [
     where('supervisorIds', 'array-contains', supervisorId),
     where('status', '==', 'active'),
-    orderBy('name', 'asc'),
   ]);
+  return results.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 }
 
 /**

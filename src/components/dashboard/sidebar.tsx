@@ -41,13 +41,13 @@ const navItems = [
     title: "Dashboard",
     href: ROUTES.DASHBOARD,
     icon: LayoutDashboard,
-    roles: ['owner', 'ceo', 'manager', 'supervisor'],
+    roles: ['owner', 'ceo', 'manager', 'supervisor', 'draughtsman', 'bass', 'helper'],
   },
   {
     title: "Employees",
     href: ROUTES.EMPLOYEES.LIST,
     icon: Users,
-    roles: ['owner', 'ceo', 'manager'],
+    roles: ['owner', 'ceo', 'manager', 'supervisor'],
   },
   {
     title: "Work Sites",

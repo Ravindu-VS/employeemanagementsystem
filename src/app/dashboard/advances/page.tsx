@@ -83,6 +83,9 @@ export default function AdvancesPage() {
     employeeId: '',
     amount: '',
     reason: '',
+    date: new Date().toISOString().split('T')[0],
+    deductThisWeek: true,
+    deductionWeek: '',
   });
   const [rejectReason, setRejectReason] = useState('');
   const [rejectingId, setRejectingId] = useState<string | null>(null);
@@ -159,6 +162,9 @@ export default function AdvancesPage() {
         employeeName: employee.displayName || 'Unknown',
         amount: parseFloat(newAdvance.amount),
         reason: newAdvance.reason,
+        requestedAt: newAdvance.date,
+        deductThisWeek: newAdvance.deductThisWeek,
+        deductionWeek: newAdvance.deductThisWeek ? undefined : newAdvance.deductionWeek || undefined,
       });
     },
     onSuccess: () => {
@@ -167,7 +173,7 @@ export default function AdvancesPage() {
         description: 'The advance request has been created.',
       });
       setShowCreateModal(false);
-      setNewAdvance({ employeeId: '', amount: '', reason: '' });
+      setNewAdvance({ employeeId: '', amount: '', reason: '', date: new Date().toISOString().split('T')[0], deductThisWeek: true, deductionWeek: '' });
       queryClient.invalidateQueries({ queryKey: ['advances'] });
     },
     onError: (error: any) => {
@@ -505,6 +511,18 @@ export default function AdvancesPage() {
               </div>
 
               <div className="space-y-2">
+                <Label required>Advance Date</Label>
+                <Input
+                  type="date"
+                  value={newAdvance.date}
+                  onChange={(e) => setNewAdvance(prev => ({
+                    ...prev,
+                    date: e.target.value
+                  }))}
+                />
+              </div>
+
+              <div className="space-y-2">
                 <Label>Reason</Label>
                 <textarea
                   placeholder="Reason for advance..."
@@ -517,12 +535,50 @@ export default function AdvancesPage() {
                 />
               </div>
 
+              <div className="space-y-3 rounded-lg border border-border p-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newAdvance.deductThisWeek}
+                    onChange={(e) => setNewAdvance(prev => ({
+                      ...prev,
+                      deductThisWeek: e.target.checked,
+                    }))}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                  />
+                  <span className="text-sm font-medium">Deduct This Week</span>
+                </label>
+                <p className="text-xs text-muted-foreground ml-6">
+                  {newAdvance.deductThisWeek
+                    ? 'Amount will be deducted from current payroll'
+                    : 'Amount will remain pending until deduction week is set'
+                  }
+                </p>
+                {!newAdvance.deductThisWeek && (
+                  <div className="space-y-1 ml-6">
+                    <Label>Deduction Week (optional)</Label>
+                    <Input
+                      type="date"
+                      placeholder="Pick the Monday of the deduction week"
+                      value={newAdvance.deductionWeek}
+                      onChange={(e) => setNewAdvance(prev => ({
+                        ...prev,
+                        deductionWeek: e.target.value,
+                      }))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Leave empty to let CEO decide later in payroll
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="flex justify-end gap-2 pt-4">
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setShowCreateModal(false);
-                    setNewAdvance({ employeeId: '', amount: '', reason: '' });
+                  setShowCreateModal(false);
+                    setNewAdvance({ employeeId: '', amount: '', reason: '', date: new Date().toISOString().split('T')[0], deductThisWeek: true, deductionWeek: '' });
                   }}
                 >
                   Cancel

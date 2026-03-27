@@ -13,6 +13,7 @@ import Link from 'next/link';
 import { 
   ArrowLeft, 
   Edit,
+  Trash2,
   Mail,
   Phone,
   MapPin,
@@ -31,7 +32,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { getEmployee, getEmployeeAttendanceSummary, getEmployeeAdvances, getEmployeeLoans, deactivateEmployee, reactivateEmployee } from '@/services';
+import { getEmployee, getEmployeeAttendanceSummary, getEmployeeAdvances, getEmployeeLoans, deactivateEmployee, reactivateEmployee, deleteEmployee } from '@/services';
+import { createAuditLog } from '@/services/audit-service';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { formatDate } from '@/lib/date-utils';
@@ -54,8 +56,9 @@ export default function EmployeeDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { toast } = useToast();
-  const { isAuthorized } = useRequireRole(['owner', 'ceo', 'manager']);
+  const { isAuthorized, profile } = useRequireRole(['owner', 'ceo', 'manager', 'supervisor']);
   const employeeId = params.id as string;
+  const canManage = profile?.role === 'owner' || profile?.role === 'ceo' || profile?.role === 'manager';
 
   // Fetch employee data
   const { 
@@ -112,11 +115,54 @@ export default function EmployeeDetailPage() {
           description: `${employee.displayName || 'Employee'} has been reactivated.`,
         });
       }
+      if (profile) {
+        createAuditLog({
+          userId: profile.uid,
+          userName: profile.displayName || profile.email,
+          userRole: profile.role,
+          action: 'update',
+          resource: 'employees',
+          resourceId: employee.uid,
+          newValue: { isActive: !employee.isActive },
+        });
+      }
       refetch();
     } catch (error: any) {
       toast({
         title: 'Error',
         description: error.message || 'Failed to update employee status',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!employee) return;
+    if (!confirm(`Are you sure you want to permanently delete ${employee.displayName || 'this employee'}? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      await deleteEmployee(employee.uid);
+      if (profile) {
+        createAuditLog({
+          userId: profile.uid,
+          userName: profile.displayName || profile.email,
+          userRole: profile.role,
+          action: 'delete',
+          resource: 'employees',
+          resourceId: employee.uid,
+          newValue: { displayName: employee.displayName, role: employee.role },
+        });
+      }
+      toast({
+        title: 'Employee Deleted',
+        description: `${employee.displayName || 'Employee'} has been permanently deleted.`,
+      });
+      router.push(ROUTES.EMPLOYEES.LIST);
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete employee',
         variant: 'destructive',
       });
     }
@@ -194,31 +240,41 @@ export default function EmployeeDetailPage() {
             </div>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            className="gap-2"
-            onClick={handleToggleStatus}
-          >
-            {employee.isActive ? (
-              <>
-                <UserX className="h-4 w-4 text-red-400" />
-                Deactivate
-              </>
-            ) : (
-              <>
-                <UserCheck className="h-4 w-4 text-green-400" />
-                Activate
-              </>
-            )}
-          </Button>
-          <Link href={ROUTES.EMPLOYEES.EDIT(employeeId)}>
-            <Button className="gap-2">
-              <Edit className="h-4 w-4" />
-              Edit
+        {canManage && (
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={handleToggleStatus}
+            >
+              {employee.isActive ? (
+                <>
+                  <UserX className="h-4 w-4 text-red-400" />
+                  Deactivate
+                </>
+              ) : (
+                <>
+                  <UserCheck className="h-4 w-4 text-green-400" />
+                  Activate
+                </>
+              )}
             </Button>
-          </Link>
-        </div>
+            <Button
+              variant="outline"
+              className="gap-2 text-red-500 hover:bg-red-500/10"
+              onClick={handleDelete}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </Button>
+            <Link href={ROUTES.EMPLOYEES.EDIT(employeeId)}>
+              <Button className="gap-2">
+                <Edit className="h-4 w-4" />
+                Edit
+              </Button>
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* Quick Stats */}

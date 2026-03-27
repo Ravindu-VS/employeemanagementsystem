@@ -7,9 +7,10 @@
  * Form to add a new work site to the system.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
+import { useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { 
@@ -27,7 +28,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { createSite } from '@/services';
+import { createSite, generateSiteCode } from '@/services';
+import { createAuditLog } from '@/services/audit-service';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { ROUTES } from '@/constants';
@@ -35,7 +37,6 @@ import { ROUTES } from '@/constants';
 // Form validation schema
 const siteSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
-  code: z.string().min(2, 'Code must be at least 2 characters').max(10, 'Code must be 10 characters or less'),
   address: z.string().min(5, 'Address must be at least 5 characters'),
   clientName: z.string().optional(),
   clientContact: z.string().optional(),
@@ -50,10 +51,17 @@ type SiteFormData = z.infer<typeof siteSchema>;
 
 export default function CreateSitePage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { isAuthorized, user } = useRequireRole(['owner', 'ceo', 'manager']);
+  const { isAuthorized, user, profile } = useRequireRole(['owner', 'ceo', 'manager']);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [enableGeofence, setEnableGeofence] = useState(false);
+  const [generatedCode, setGeneratedCode] = useState('Generating...');
+
+  // Auto-generate site code on mount
+  useEffect(() => {
+    generateSiteCode().then(code => setGeneratedCode(code)).catch(() => setGeneratedCode('SITE-001'));
+  }, []);
 
   const {
     register,
@@ -73,7 +81,7 @@ export default function CreateSitePage() {
     try {
       const siteData = {
         name: data.name,
-        code: data.code.toUpperCase(),
+        code: generatedCode,
         address: data.address,
         city: '',
         state: '',
@@ -95,9 +103,24 @@ export default function CreateSitePage() {
 
       await createSite(siteData);
 
+      // Invalidate sites query so the list refreshes
+      await queryClient.invalidateQueries({ queryKey: ['sites'] });
+
+      if (profile) {
+        createAuditLog({
+          userId: profile.uid,
+          userName: profile.displayName || profile.email,
+          userRole: profile.role,
+          action: 'create',
+          resource: 'sites',
+          resourceId: generatedCode,
+          newValue: { name: data.name, code: generatedCode },
+        });
+      }
+
       toast({
         title: 'Site Created',
-        description: `${data.name} has been added successfully.`,
+        description: `${data.name} (${generatedCode}) has been added successfully.`,
       });
 
       router.push(ROUTES.SITES.LIST);
@@ -187,16 +210,14 @@ export default function CreateSitePage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="code" required>Site Code</Label>
+                  <Label htmlFor="code">Site Code</Label>
                   <Input
                     id="code"
-                    placeholder="DTP001"
-                    maxLength={10}
-                    {...register('code')}
-                    error={errors.code?.message}
+                    value={generatedCode}
+                    disabled
                   />
                   <p className="text-xs text-muted-foreground">
-                    Unique identifier (max 10 characters)
+                    Auto-generated unique identifier
                   </p>
                 </div>
               </div>

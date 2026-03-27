@@ -19,7 +19,7 @@ import {
   onAuthStateChanged,
   User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp, collection, getDocs, query, limit } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp, collection, getDocs, query, limit, increment } from 'firebase/firestore';
 import { auth, db } from './config';
 import { COLLECTIONS } from '@/constants';
 import type { User, UserProfile } from '@/types';
@@ -269,9 +269,6 @@ async function updateLastLogin(uid: string): Promise<void> {
     console.warn('Failed to update last login:', error);
   }
 }
-
-// Helper for Firestore increment
-import { increment } from 'firebase/firestore';
 
 /**
  * Subscribe to auth state changes

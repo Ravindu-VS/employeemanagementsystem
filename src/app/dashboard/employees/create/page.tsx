@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
+import { useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { 
@@ -31,9 +32,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { createEmployee } from '@/services';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { auth } from '@/lib/firebase/client';
+import { createEmployee, generateWorkerId } from '@/services';
+import { createAuditLog } from '@/services/audit-service';
+import { createUserWithEmailAndPassword, updateProfile, signOut as firebaseSignOut } from 'firebase/auth';
+import { secondaryAuth } from '@/lib/firebase/config';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { ROUTES, USER_ROLES } from '@/constants';
@@ -67,8 +69,9 @@ type EmployeeFormData = z.infer<typeof employeeSchema>;
 
 export default function CreateEmployeePage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { isAuthorized } = useRequireRole(['owner', 'ceo', 'manager']);
+  const { isAuthorized, profile } = useRequireRole(['owner', 'ceo', 'manager']);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const {
@@ -90,16 +93,23 @@ export default function CreateEmployeePage() {
   const onSubmit = async (data: EmployeeFormData) => {
     setIsSubmitting(true);
     try {
-      // Create Firebase Auth user
+      // Auto-generate worker ID
+      const workerId = await generateWorkerId();
+
+      // Create Firebase Auth user using SECONDARY auth instance
+      // This prevents switching the current user's session
       const userCredential = await createUserWithEmailAndPassword(
-        auth,
+        secondaryAuth,
         data.email,
         data.password
       );
       const firebaseUser = userCredential.user;
 
-      // Update display name
+      // Update display name on the new user
       await updateProfile(firebaseUser, { displayName: data.displayName });
+
+      // Sign out the secondary auth immediately so it doesn't persist
+      await firebaseSignOut(secondaryAuth);
 
       // Create employee profile in Firestore
       await createEmployee(firebaseUser.uid, {
@@ -108,7 +118,7 @@ export default function CreateEmployeePage() {
         photoURL: null,
         role: data.role as UserRole,
         isActive: true,
-        workerId: '',
+        workerId,
         phone: data.phone || '',
         address: data.address,
         dailyRate: data.dailyRate,
@@ -128,9 +138,24 @@ export default function CreateEmployeePage() {
         metadata: { loginCount: 0 },
       } as any);
 
+      // Invalidate employees query so the list refreshes
+      await queryClient.invalidateQueries({ queryKey: ['employees'] });
+
+      if (profile) {
+        createAuditLog({
+          userId: profile.uid,
+          userName: profile.displayName || profile.email,
+          userRole: profile.role,
+          action: 'create',
+          resource: 'employees',
+          resourceId: firebaseUser.uid,
+          newValue: { displayName: data.displayName, role: data.role, workerId },
+        });
+      }
+
       toast({
         title: 'Employee Created',
-        description: `${data.displayName} has been added successfully.`,
+        description: `${data.displayName} (${workerId}) has been added successfully.`,
       });
 
       router.push(ROUTES.EMPLOYEES.LIST);
@@ -195,9 +220,13 @@ export default function CreateEmployeePage() {
                   <Label htmlFor="employeeId">Employee ID</Label>
                   <Input
                     id="employeeId"
-                    placeholder="EMP001"
-                    {...register('employeeId')}
+                    placeholder="Auto-generated (WRK001)"
+                    disabled
+                    value="Auto-generated"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Will be auto-assigned on creation
+                  </p>
                 </div>
               </div>
 

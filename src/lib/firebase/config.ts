@@ -95,8 +95,18 @@ if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_USE_EMULAT
   }
 }
 
+// Secondary Firebase app for creating users without affecting current session
+let secondaryApp: FirebaseApp | null = null;
+function getSecondaryApp(): FirebaseApp {
+  if (!secondaryApp) {
+    secondaryApp = initializeApp(firebaseConfig, 'secondary');
+  }
+  return secondaryApp;
+}
+const secondaryAuth: Auth = getAuth(getSecondaryApp());
+
 // Export instances
-export { app, auth, db, storage, analytics };
+export { app, auth, db, storage, analytics, secondaryAuth };
 
 // Export types for convenience
 export type { FirebaseApp } from 'firebase/app';

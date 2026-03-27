@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import {
   Bell,
   Menu,
@@ -13,15 +14,22 @@ import {
   Settings,
   LogOut,
   ChevronDown,
+  X,
+  CheckCircle2,
+  AlertCircle,
+  Info,
+  Clock,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { signOut } from "@/lib/firebase/auth";
-import { ROUTES, USER_ROLES } from "@/constants";
-import { getGreeting } from "@/lib/date-utils";
+import { ROUTES, USER_ROLES, COLLECTIONS } from "@/constants";
+import { getGreeting, formatDate } from "@/lib/date-utils";
 import { getInitials, cn } from "@/lib/utils";
+import { db } from "@/lib/firebase/client";
+import { collection, query, orderBy, limit, getDocs, where, Timestamp } from "firebase/firestore";
 import type { UserProfile } from "@/types";
 
 /**
@@ -38,6 +46,46 @@ export function Header({ user, onMenuClick, sidebarCollapsed }: HeaderProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
+  const [showNotifications, setShowNotifications] = React.useState(false);
+  const notifRef = React.useRef<HTMLDivElement>(null);
+
+  // Close notification panel on outside click
+  React.useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setShowNotifications(false);
+      }
+    }
+    if (showNotifications) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showNotifications]);
+
+  // Fetch recent notifications from Firestore
+  const { data: notifications = [] } = useQuery({
+    queryKey: ["header-notifications", user.uid],
+    queryFn: async () => {
+      const q = query(
+        collection(db, COLLECTIONS.NOTIFICATIONS),
+        orderBy("createdAt", "desc"),
+        limit(10)
+      );
+      const snap = await getDocs(q);
+      return snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          title: data.title || "Notification",
+          message: data.message || "",
+          type: data.type || "info",
+          read: data.read ?? false,
+          createdAt: data.createdAt?.toDate?.() ?? new Date(),
+        };
+      });
+    },
+    refetchInterval: 60_000,
+  });
+
+  const unreadCount = notifications.filter((n: any) => !n.read).length;
 
   // Handle logout
   const handleLogout = async () => {
@@ -100,10 +148,72 @@ export function Header({ user, onMenuClick, sidebarCollapsed }: HeaderProps) {
         </Button>
 
         {/* Notifications */}
-        <Button variant="ghost" size="icon-sm" className="relative">
-          <Bell className="h-5 w-5" />
-          <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" />
-        </Button>
+        <div className="relative" ref={notifRef}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="relative"
+            onClick={() => setShowNotifications(!showNotifications)}
+          >
+            <Bell className="h-5 w-5" />
+            {unreadCount > 0 && (
+              <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </Button>
+
+          {showNotifications && (
+            <div className="absolute right-0 top-full mt-2 z-50 w-80 rounded-lg border border-border bg-popover shadow-lg">
+              <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                <h3 className="font-semibold text-sm">Notifications</h3>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setShowNotifications(false)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                    <Bell className="h-8 w-8 mb-2 opacity-50" />
+                    <p className="text-sm">No notifications yet</p>
+                  </div>
+                ) : (
+                  notifications.map((notif: any) => (
+                    <div
+                      key={notif.id}
+                      className={cn(
+                        "flex gap-3 border-b border-border/50 px-4 py-3 transition-colors hover:bg-muted/50",
+                        !notif.read && "bg-primary/5"
+                      )}
+                    >
+                      <div className="mt-0.5">
+                        {notif.type === "success" ? (
+                          <CheckCircle2 className="h-4 w-4 text-green-500" />
+                        ) : notif.type === "warning" || notif.type === "alert" ? (
+                          <AlertCircle className="h-4 w-4 text-yellow-500" />
+                        ) : (
+                          <Info className="h-4 w-4 text-blue-500" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{notif.title}</p>
+                        <p className="text-xs text-muted-foreground truncate">{notif.message}</p>
+                        <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+                          <Clock className="h-3 w-3" />
+                          {formatDate(notif.createdAt, 'DATE_TIME')}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* User menu */}
         <DropdownMenu.Root>
@@ -147,7 +257,7 @@ export function Header({ user, onMenuClick, sidebarCollapsed }: HeaderProps) {
               
               <DropdownMenu.Item asChild>
                 <Link
-                  href={ROUTES.SETTINGS.PROFILE}
+                  href={`${ROUTES.SETTINGS.LIST}?tab=profile`}
                   className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent focus:bg-accent"
                 >
                   <User className="h-4 w-4" />

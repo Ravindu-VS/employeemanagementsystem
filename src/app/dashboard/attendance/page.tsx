@@ -34,7 +34,7 @@ import {
   getSimpleAttendance,
   bulkMarkSimpleAttendance,
   getActiveEmployees,
-  getActiveSites,
+  getAllSites,
 } from '@/services';
 import { useRequireRole, useAuth } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
@@ -44,6 +44,9 @@ import {
   toISODateString,
 } from '@/lib/date-utils';
 import type { SimpleAttendance, BulkAttendanceEntry, UserRole } from '@/types';
+
+// Stable empty array to avoid infinite re-renders from useEffect deps
+const EMPTY_ATTENDANCE: SimpleAttendance[] = [];
 
 // Role badge colors
 const roleBadgeColors: Record<UserRole, string> = {
@@ -84,8 +87,8 @@ export default function AttendancePage() {
 
   // Fetch sites
   const { data: sites = [] } = useQuery({
-    queryKey: ['active-sites'],
-    queryFn: getActiveSites,
+    queryKey: ['sites'],
+    queryFn: getAllSites,
   });
 
   // Fetch active employees
@@ -95,7 +98,7 @@ export default function AttendancePage() {
   });
 
   // Fetch existing attendance for selected date
-  const { data: existingAttendance = [], isLoading } = useQuery({
+  const { data: existingAttendance = EMPTY_ATTENDANCE, isLoading } = useQuery({
     queryKey: ['simple-attendance', dateStr, selectedSiteId],
     queryFn: () => getSimpleAttendance(dateStr, selectedSiteId || undefined),
     enabled: !!selectedSiteId,

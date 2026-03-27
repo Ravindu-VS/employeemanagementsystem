@@ -15,7 +15,10 @@ import {
   where,
   orderBy,
   generateDocId,
+  serverTimestamp,
 } from '@/lib/firebase/firestore';
+import { writeBatch, doc, collection } from 'firebase/firestore';
+import { db } from '@/lib/firebase/config';
 import { uploadAttendancePhoto } from '@/lib/firebase/storage';
 import { COLLECTIONS, ATTENDANCE_CONFIG } from '@/constants';
 import { toISODateString, getDurationInMinutes } from '@/lib/date-utils';
@@ -70,14 +73,14 @@ export async function getAttendanceByDateRange(
   const constraints = [
     where('date', '>=', startDate),
     where('date', '<=', endDate),
-    orderBy('date', 'desc'),
   ];
   
   if (employeeId) {
-    constraints.unshift(where('employeeId', '==', employeeId));
+    constraints.push(where('employeeId', '==', employeeId));
   }
   
-  return getDocuments<DailyAttendance>(COLLECTIONS.ATTENDANCE, constraints);
+  const results = await getDocuments<DailyAttendance>(COLLECTIONS.ATTENDANCE, constraints);
+  return results.sort((a, b) => b.date.localeCompare(a.date));
 }
 
 /**
@@ -86,10 +89,10 @@ export async function getAttendanceByDateRange(
 export async function getTodayAttendance(): Promise<DailyAttendance[]> {
   const today = toISODateString(new Date());
   
-  return getDocuments<DailyAttendance>(COLLECTIONS.ATTENDANCE, [
+  const results = await getDocuments<DailyAttendance>(COLLECTIONS.ATTENDANCE, [
     where('date', '==', today),
-    orderBy('employeeName', 'asc'),
   ]);
+  return results.sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
 }
 
 /**
@@ -498,6 +501,8 @@ export async function getWorkerSimpleAttendance(
   workerId: string,
   date: string
 ): Promise<SimpleAttendance | null> {
+  if (!workerId || !date) return null;
+
   const records = await getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
     where('workerId', '==', workerId),
     where('date', '==', date),
@@ -522,14 +527,16 @@ export async function markSimpleAttendance(
 ): Promise<string> {
   const existing = await getWorkerSimpleAttendance(data.workerId, data.date);
 
+  const updatePayload: Record<string, any> = {
+    morningSite: data.morningSite,
+    eveningSite: data.eveningSite,
+    otHours: data.otHours,
+    supervisorId: data.supervisorId,
+  };
+  if (data.notes !== undefined) updatePayload.notes = data.notes;
+
   if (existing) {
-    await updateDocument<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, existing.id, {
-      morningSite: data.morningSite,
-      eveningSite: data.eveningSite,
-      otHours: data.otHours,
-      supervisorId: data.supervisorId,
-      notes: data.notes,
-    });
+    await updateDocument<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, existing.id, updatePayload);
     return existing.id;
   }
 
@@ -537,17 +544,14 @@ export async function markSimpleAttendance(
     date: data.date,
     workerId: data.workerId,
     workerName: data.workerName,
-    morningSite: data.morningSite,
-    eveningSite: data.eveningSite,
-    otHours: data.otHours,
-    supervisorId: data.supervisorId,
-    notes: data.notes,
+    ...updatePayload,
   } as any);
 }
 
 /**
  * Bulk mark attendance for multiple workers (supervisor workflow).
- * Designed for <5 seconds per worker interaction.
+ * Uses Firestore writeBatch for performance — single round-trip.
+ * Only writes changed records to minimise Firestore operations.
  */
 export async function bulkMarkSimpleAttendance(
   date: string,
@@ -555,30 +559,70 @@ export async function bulkMarkSimpleAttendance(
   entries: BulkAttendanceEntry[],
   supervisorId: string
 ): Promise<{ success: number; failed: number }> {
+  // 1. Pre-fetch ALL existing records for this date in one query
+  const existingRecords = await getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
+    where('date', '==', date),
+  ]);
+  const existingMap = new Map(existingRecords.map(r => [r.workerId, r]));
+
+  // 2. Build batch — only include changed records
+  const batch = writeBatch(db);
   let success = 0;
   let failed = 0;
 
   for (const entry of entries) {
     try {
-      const existing = await getWorkerSimpleAttendance(entry.workerId, date);
+      const existing = existingMap.get(entry.workerId);
 
       const morningSite = entry.morning ? siteId : (existing?.morningSite ?? null);
       const eveningSite = entry.evening ? siteId : (existing?.eveningSite ?? null);
-      const otHours = entry.otHours + (existing?.otHours ?? 0);
+      const otHours = entry.otHours;
 
-      await markSimpleAttendance({
-        date,
-        workerId: entry.workerId,
-        workerName: entry.workerName,
-        morningSite,
-        eveningSite,
-        otHours,
-        supervisorId,
-      });
+      // Skip if nothing changed
+      if (
+        existing &&
+        existing.morningSite === morningSite &&
+        existing.eveningSite === eveningSite &&
+        existing.otHours === otHours
+      ) {
+        success++;
+        continue;
+      }
+
+      if (existing) {
+        // Update existing doc
+        const docRef = doc(db, SIMPLE_ATTENDANCE_COLLECTION, existing.id);
+        batch.update(docRef, {
+          morningSite,
+          eveningSite,
+          otHours,
+          supervisorId,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        // Create new doc
+        const newDocRef = doc(collection(db, SIMPLE_ATTENDANCE_COLLECTION));
+        batch.set(newDocRef, {
+          date,
+          workerId: entry.workerId,
+          workerName: entry.workerName,
+          morningSite,
+          eveningSite,
+          otHours,
+          supervisorId,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
       success++;
     } catch {
       failed++;
     }
+  }
+
+  // 3. Single atomic commit
+  if (success > 0) {
+    await batch.commit();
   }
 
   return { success, failed };
@@ -625,4 +669,67 @@ export async function getDailySimpleAttendance(date: string): Promise<SimpleAtte
   return getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
     where('date', '==', date),
   ]);
+}
+
+/**
+ * Get all simple attendance records for a date range (for payroll daily breakdown)
+ */
+export async function getSimpleAttendanceForDateRange(
+  startDate: string,
+  endDate: string
+): Promise<SimpleAttendance[]> {
+  return getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
+    where('date', '>=', startDate),
+    where('date', '<=', endDate),
+  ]);
+}
+
+/**
+ * Get attendance grouped by site for a worker over a date range.
+ * Used by payroll engine for per-site salary calculation.
+ * Returns { [siteId]: { daysWorked, otHours } }
+ */
+export async function getWorkerWeeklyAttendanceBySite(
+  workerId: string,
+  startDate: string,
+  endDate: string
+): Promise<Record<string, { daysWorked: number; otHours: number }>> {
+  const records = await getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
+    where('workerId', '==', workerId),
+    where('date', '>=', startDate),
+    where('date', '<=', endDate),
+  ]);
+
+  const siteMap: Record<string, { daysWorked: number; otHours: number }> = {};
+
+  for (const record of records) {
+    const morningSite = record.morningSite;
+    const eveningSite = record.eveningSite;
+
+    // Morning shift → 0.5 day credited to morning site
+    if (morningSite) {
+      if (!siteMap[morningSite]) siteMap[morningSite] = { daysWorked: 0, otHours: 0 };
+      siteMap[morningSite].daysWorked += 0.5;
+    }
+
+    // Evening shift → 0.5 day credited to evening site
+    if (eveningSite) {
+      if (!siteMap[eveningSite]) siteMap[eveningSite] = { daysWorked: 0, otHours: 0 };
+      siteMap[eveningSite].daysWorked += 0.5;
+    }
+
+    // OT hours: if morning and evening are same site, credit to that site.
+    // If different sites, credit to evening site (convention: OT is after regular hours).
+    // If only one site present, credit to that site.
+    const otHours = record.otHours || 0;
+    if (otHours > 0) {
+      const otSite = eveningSite || morningSite;
+      if (otSite) {
+        if (!siteMap[otSite]) siteMap[otSite] = { daysWorked: 0, otHours: 0 };
+        siteMap[otSite].otHours += otHours;
+      }
+    }
+  }
+
+  return siteMap;
 }

@@ -16,6 +16,7 @@ import {
   Filter,
   Eye,
   Edit,
+  Trash2,
   MapPin,
   Building2,
   Users,
@@ -29,7 +30,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { getAllSites, updateSiteStatus } from '@/services';
+import { getAllSites, updateSiteStatus, deleteSite } from '@/services';
+import { createAuditLog } from '@/services/audit-service';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { formatDate } from '@/lib/date-utils';
@@ -71,7 +73,7 @@ const statusConfig: Record<SiteStatus, {
 };
 
 export default function SitesPage() {
-  const { isAuthorized } = useRequireRole(['owner', 'ceo', 'manager']);
+  const { isAuthorized, profile } = useRequireRole(['owner', 'ceo', 'manager']);
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<SiteStatus | 'all'>('all');
@@ -126,6 +128,35 @@ export default function SitesPage() {
       toast({
         title: 'Error',
         description: error.message || 'Failed to update status',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDelete = async (siteId: string, siteName: string) => {
+    if (!confirm(`Are you sure you want to delete "${siteName}"? This cannot be undone.`)) return;
+    try {
+      await deleteSite(siteId);
+      if (profile) {
+        createAuditLog({
+          userId: profile.uid,
+          userName: profile.displayName || profile.email,
+          userRole: profile.role,
+          action: 'delete',
+          resource: 'sites',
+          resourceId: siteId,
+          newValue: { name: siteName },
+        });
+      }
+      toast({
+        title: 'Site Deleted',
+        description: `${siteName} has been removed.`,
+      });
+      refetch();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete site',
         variant: 'destructive',
       });
     }
@@ -346,6 +377,15 @@ export default function SitesPage() {
                           Edit
                         </Button>
                       </Link>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-8 gap-1 text-red-400 hover:text-red-300"
+                        onClick={() => handleDelete(site.id, site.name)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete
+                      </Button>
                     </div>
                     
                     {/* Quick status change */}

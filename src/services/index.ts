@@ -14,11 +14,13 @@ export {
   getActiveEmployees,
   createEmployee,
   updateEmployee,
+  deleteEmployee,
   deactivateEmployee,
   reactivateEmployee,
   searchEmployees,
   updateEmployeeRates,
   generateWorkerId,
+  updateEmployeePhoto,
 } from './employee-service';
 
 // Site Service
@@ -29,6 +31,7 @@ export {
   createSite,
   updateSite,
   updateSiteStatus,
+  deleteSite,
   assignSupervisorsToSite,
   isWithinGeofence,
   getSitesBySupervisor,
@@ -52,7 +55,9 @@ export {
   markSimpleAttendance,
   bulkMarkSimpleAttendance,
   getWorkerWeeklyAttendanceSummary,
+  getWorkerWeeklyAttendanceBySite,
   getDailySimpleAttendance,
+  getSimpleAttendanceForDateRange,
 } from './attendance-service';
 
 // Payroll Service
@@ -81,6 +86,8 @@ export {
   cancelAdvance,
   markAdvanceDeducted,
   getUndeductedAdvances,
+  getAdvancesForPayrollWeek,
+  getAllPendingAdvances,
 } from './advance-service';
 
 // Loan Service
@@ -100,3 +107,26 @@ export {
   getLoanStats,
   calculateLoanSchedule,
 } from './loan-service';
+
+// Audit Log Service
+export {
+  createAuditLog,
+  getAuditLogs,
+} from './audit-service';
+
+// Settings Service
+export {
+  getCompanySettings,
+  saveCompanySettings,
+  getPayrollSettings,
+  savePayrollSettings,
+  getAttendanceSettings,
+  saveAttendanceSettings,
+  getNotificationSettings,
+  saveNotificationSettings,
+  getAllSettings,
+  DEFAULT_COMPANY_SETTINGS,
+  DEFAULT_PAYROLL_SETTINGS,
+  DEFAULT_ATTENDANCE_SETTINGS,
+  DEFAULT_NOTIFICATION_SETTINGS,
+} from './settings-service';

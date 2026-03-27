@@ -9,6 +9,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Eye, EyeOff, Building2, Mail, Lock, AlertCircle, Loader2 } from "lucide-react";
 import { signIn, signInWithGoogle } from "@/lib/firebase/auth";
+import { createAuditLog } from "@/services/audit-service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -107,6 +108,15 @@ function LoginPageContent() {
         await signOut();
         return;
       }
+
+      createAuditLog({
+        userId: profile.uid,
+        userName: profile.displayName || profile.email,
+        userRole: profile.role,
+        action: 'login',
+        resource: 'auth',
+        resourceId: profile.uid,
+      });
 
       toast({
         title: "Welcome back!",

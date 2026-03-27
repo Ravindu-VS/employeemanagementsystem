@@ -11,8 +11,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { getSite, updateSite, getEmployeesByRole } from '@/services';
+import { createAuditLog } from '@/services/audit-service';
 import { ROUTES, SITE_STATUSES } from '@/constants';
 import { SiteStatus, UserProfile } from '@/types';
+import { useAuthStore } from '@/store/auth-store';
 import { 
   ArrowLeft, 
   Save, 
@@ -46,6 +48,7 @@ export default function EditSitePage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const siteId = params.id as string;
+  const authProfile = useAuthStore((s) => s.profile);
 
   // Fetch site details
   const { data: site, isLoading: siteLoading } = useQuery({
@@ -84,6 +87,17 @@ export default function EditSitePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sites'] });
       queryClient.invalidateQueries({ queryKey: ['site', siteId] });
+      if (authProfile) {
+        createAuditLog({
+          userId: authProfile.uid,
+          userName: authProfile.displayName || authProfile.email,
+          userRole: authProfile.role,
+          action: 'update',
+          resource: 'sites',
+          resourceId: siteId,
+          newValue: { name: site?.name },
+        });
+      }
       toast({
         title: 'Success',
         description: 'Site updated successfully',
