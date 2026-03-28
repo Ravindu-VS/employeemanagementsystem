@@ -34,7 +34,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { ROUTES, USER_ROLES } from "@/constants";
 import { cn } from "@/lib/utils";
-import { formatDate, toISODateString } from "@/lib/date-utils";
+import { formatDate, toISODateString, getRelativeTime } from "@/lib/date-utils";
 import { subDays, format } from "date-fns";
 import {
   getAllEmployees,
@@ -43,8 +43,9 @@ import {
   getSimpleAttendanceForDateRange,
   getPendingAdvances,
   getPendingLoans,
+  getAuditLogs,
 } from "@/services";
-import type { UserRole } from "@/types";
+import type { AuditLog, UserRole } from "@/types";
 
 /**
  * Dashboard Overview Page
@@ -221,6 +222,11 @@ export default function DashboardPage() {
     queryFn: getPendingLoans,
   });
 
+  const { data: recentActivity = [] } = useQuery({
+    queryKey: ["recentActivity"],
+    queryFn: () => getAuditLogs(10),
+  });
+
   const totalEmployees = employees.length;
   const activeEmployees = employees.filter((e) => e.isActive !== false).length;
   const totalSites = sites.length;
@@ -358,11 +364,36 @@ export default function DashboardPage() {
           </div>
           <Card>
             <CardContent className="p-0">
-              <div className="flex h-[200px] items-center justify-center">
-                <p className="text-sm text-muted-foreground">
-                  No recent activity to display
-                </p>
-              </div>
+              {recentActivity.length > 0 ? (
+                <ul className="divide-y">
+                  {recentActivity.map((log: AuditLog) => (
+                    <li key={log.id} className="flex items-start gap-3 px-4 py-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {log.userName}
+                          <span className="font-normal text-muted-foreground">
+                            {" "}
+                            {log.action.replace(/_/g, " ").toLowerCase()}
+                          </span>
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {log.resource}
+                          {" · "}
+                          {log.timestamp instanceof Date
+                            ? getRelativeTime(log.timestamp)
+                            : "Just now"}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="flex h-[200px] items-center justify-center">
+                  <p className="text-sm text-muted-foreground">
+                    No recent activity to display
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
