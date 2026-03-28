@@ -27,6 +27,7 @@ import {
 import { getWorkerWeeklyAttendanceSummary, getWorkerWeeklyAttendanceBySite } from './attendance-service';
 import { getEmployee } from './employee-service';
 import { getAdvancesForPayrollWeek } from './advance-service';
+import { getEmployeeActiveLoan, recordLoanPayment } from './loan-service';
 import { getActiveSites } from './site-service';
 import type { 
   WeeklyPayroll, 
@@ -195,8 +196,18 @@ export async function generateEmployeePayroll(
     description: adv.reason || 'Advance deduction',
   }));
   
-  // TODO: Get pending loans
-  const loanDeductions: LoanDeduction[] = [];
+  // Get loan deduction for this employee
+  const activeLoan = await getEmployeeActiveLoan(employeeId);
+  const loanDeductions: LoanDeduction[] = activeLoan
+    ? [
+        {
+          loanId: activeLoan.id,
+          emiAmount: activeLoan.emiAmount,
+          emiNumber: activeLoan.paidEmis + 1,
+          totalEmis: activeLoan.totalEmis,
+        },
+      ]
+    : [];
   const otherDeductions: OtherDeduction[] = [];
   
   const totalEarnings = regularEarnings + overtimeEarnings;
@@ -287,6 +298,19 @@ export async function generateWeeklyPayroll(
 }
 
 /**
+ * Record EMI payments for all loan deductions in a payroll record.
+ * Called when a payroll is marked as paid.
+ */
+async function recordPayrollLoanPayments(payrollId: string): Promise<void> {
+  const payroll = await getPayroll(payrollId);
+  if (payroll) {
+    for (const loanDeduction of payroll.loanDeductions) {
+      await recordLoanPayment(loanDeduction.loanId, payrollId);
+    }
+  }
+}
+
+/**
  * Update payroll status
  */
 export async function updatePayrollStatus(
@@ -306,6 +330,11 @@ export async function updatePayrollStatus(
   }
   
   await updateDocument<WeeklyPayroll>(COLLECTIONS.PAYROLL, payrollId, updates);
+
+  // Record EMI payments for any loan deductions when payroll is marked as paid
+  if (status === 'paid') {
+    await recordPayrollLoanPayments(payrollId);
+  }
 }
 
 /**
@@ -390,6 +419,9 @@ export async function markAsPaid(
     paidAt: new Date(),
     paymentMethod,
   });
+
+  // Record EMI payments for any loan deductions included in this payroll
+  await recordPayrollLoanPayments(payrollId);
 }
 
 /**
