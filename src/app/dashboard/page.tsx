@@ -76,20 +76,20 @@ function StatCard({
   return (
     <Card className={cn("relative overflow-hidden", className)}>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
+        <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
           {title}
         </CardTitle>
         <div
           className={cn(
-            "flex h-10 w-10 items-center justify-center rounded-lg",
+            "flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg shrink-0",
             iconClassName || "bg-primary/10 text-primary"
           )}
         >
-          <Icon className="h-5 w-5" />
+          <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
         </div>
       </CardHeader>
       <CardContent>
-        <div className="text-3xl font-bold">{value}</div>
+        <div className="text-2xl sm:text-3xl font-bold">{value}</div>
         {description && (
           <p className="text-xs text-muted-foreground mt-1">{description}</p>
         )}
@@ -132,22 +132,22 @@ function QuickActionCard({
   return (
     <Link href={href}>
       <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-primary/50">
-        <CardContent className="flex items-center gap-4 p-4">
+        <CardContent className="flex flex-col sm:flex-row gap-3 sm:gap-4 p-3 sm:p-4 items-start sm:items-center">
           <div
             className={cn(
-              "flex h-12 w-12 items-center justify-center rounded-lg",
+              "flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-lg",
               color
             )}
           >
-            <Icon className="h-6 w-6" />
+            <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
           </div>
-          <div className="flex-1">
-            <h3 className="font-semibold group-hover:text-primary transition-colors">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-sm sm:text-base group-hover:text-primary transition-colors line-clamp-1">
               {title}
             </h3>
-            <p className="text-sm text-muted-foreground">{description}</p>
+            <p className="text-xs sm:text-sm text-muted-foreground line-clamp-1">{description}</p>
           </div>
-          <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+          <ArrowRight className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0 mt-1 sm:mt-0" />
         </CardContent>
       </Card>
     </Link>
@@ -261,19 +261,20 @@ export default function DashboardPage() {
   const ROLE_COLORS = ['#8b5cf6', '#3b82f6', '#06b6d4', '#22c55e', '#eab308', '#f97316', '#6b7280'];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Page header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground">
+      <div className="flex flex-col gap-3 sm:gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
             Welcome back! Here's an overview of your workforce.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 rounded-lg border bg-card px-3 py-1.5 text-sm">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-            <span>{formatDate(new Date(), 'DATE_LONG')}</span>
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 rounded-lg border bg-card px-2 sm:px-3 py-1.5 text-xs sm:text-sm whitespace-nowrap">
+            <Calendar className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+            <span className="hidden sm:inline">{formatDate(new Date(), 'DATE_LONG')}</span>
+            <span className="sm:hidden">{formatDate(new Date(), 'DATE_SHORT')}</span>
           </div>
         </div>
       </div>
@@ -312,23 +313,23 @@ export default function DashboardPage() {
       {/* Pending items alert */}
       {(pendingAdvanceCount > 0 || pendingLoanCount > 0) && (
         <Card className="border-yellow-500/50 bg-yellow-50/50 dark:bg-yellow-900/10">
-          <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400">
+          <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400">
               <AlertCircle className="h-5 w-5" />
             </div>
-            <div className="flex-1">
-              <h3 className="font-semibold text-yellow-800 dark:text-yellow-200">
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-sm sm:text-base text-yellow-800 dark:text-yellow-200">
                 Pending Approvals
               </h3>
-              <p className="text-sm text-yellow-700 dark:text-yellow-300">
+              <p className="text-xs sm:text-sm text-yellow-700 dark:text-yellow-300 mt-1">
                 {pendingAdvanceCount} advance requests and {pendingLoanCount} loan requests need your attention
               </p>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" asChild>
+            <div className="flex flex-col gap-2 sm:flex-row sm:gap-2 shrink-0 w-full sm:w-auto">
+              <Button variant="outline" size="sm" asChild className="w-full sm:w-auto">
                 <Link href={ROUTES.ADVANCES.LIST}>View Advances</Link>
               </Button>
-              <Button variant="outline" size="sm" asChild>
+              <Button variant="outline" size="sm" asChild className="w-full sm:w-auto">
                 <Link href={ROUTES.LOANS.LIST}>View Loans</Link>
               </Button>
             </div>
@@ -337,11 +338,11 @@ export default function DashboardPage() {
       )}
 
       {/* Quick actions and Recent activity */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
         {/* Quick Actions */}
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold">Quick Actions</h2>
-          <div className="grid gap-3">
+        <div className="space-y-3 sm:space-y-4">
+          <h2 className="text-base sm:text-lg font-semibold">Quick Actions</h2>
+          <div className="grid gap-2 sm:gap-3">
             {quickActions.map((action) => (
               <QuickActionCard key={action.title} {...action} />
             ))}
@@ -349,17 +350,17 @@ export default function DashboardPage() {
         </div>
 
         {/* Recent Activity */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Recent Activity</h2>
-            <Button variant="ghost" size="sm" asChild>
+        <div className="space-y-3 sm:space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base sm:text-lg font-semibold">Recent Activity</h2>
+            <Button variant="ghost" size="sm" asChild className="text-xs sm:text-sm">
               <Link href={ROUTES.AUDIT_LOGS}>View All</Link>
             </Button>
           </div>
           <Card>
             <CardContent className="p-0">
-              <div className="flex h-[200px] items-center justify-center">
-                <p className="text-sm text-muted-foreground">
+              <div className="flex h-[150px] sm:h-[200px] items-center justify-center">
+                <p className="text-xs sm:text-sm text-muted-foreground">
                   No recent activity to display
                 </p>
               </div>
@@ -369,17 +370,17 @@ export default function DashboardPage() {
       </div>
 
       {/* Charts */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
         {/* Attendance Trend Chart */}
         <Card>
-          <CardHeader>
-            <CardTitle>Attendance Overview</CardTitle>
-            <CardDescription>
+          <CardHeader className="pb-3 sm:pb-4">
+            <CardTitle className="text-base sm:text-lg">Attendance Overview</CardTitle>
+            <CardDescription className="text-xs sm:text-sm">
               Last 7 days attendance trend
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
+            <div className="h-[250px] sm:h-[300px] lg:h-[350px]">
               {attendanceChartData.some(d => d.present > 0) ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={attendanceChartData}>
@@ -411,14 +412,14 @@ export default function DashboardPage() {
 
         {/* Role Distribution Pie Chart */}
         <Card>
-          <CardHeader>
-            <CardTitle>Workforce Distribution</CardTitle>
-            <CardDescription>
+          <CardHeader className="pb-3 sm:pb-4">
+            <CardTitle className="text-base sm:text-lg">Workforce Distribution</CardTitle>
+            <CardDescription className="text-xs sm:text-sm">
               Employees by role
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
+            <div className="h-[250px] sm:h-[300px] lg:h-[350px]">
               {roleChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>

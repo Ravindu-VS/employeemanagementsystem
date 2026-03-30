@@ -344,26 +344,28 @@ export default function PayrollPage() {
     <div className="space-y-6">
 
       {/* ========== SECTION 1: WEEK SELECTOR ========== */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Payroll</h1>
-          <p className="text-muted-foreground">
+      <div className="flex flex-col gap-3 sm:gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Payroll</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">
             Weekly salary tracking &mdash; Pay day every Saturday
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => navigateWeek('prev')}>
+        <div className="flex items-center gap-1 sm:gap-2 flex-wrap shrink-0">
+          <Button variant="outline" size="sm" onClick={() => navigateWeek('prev')} className="h-9 w-9 p-0 sm:h-10 sm:w-10">
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium">Week {weekNumber}</span>
-            <span className="text-sm text-muted-foreground">
-              ({formatDate(weekStart)} - {formatDate(weekEnd)})
+          <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-1 rounded-md border border-border bg-background px-2 sm:px-3 py-1.5 text-xs sm:text-sm">
+            <span className="font-medium flex items-center gap-0.5 sm:gap-1">
+              <Calendar className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+              Week {weekNumber}
+            </span>
+            <span className="text-xs text-muted-foreground line-clamp-2">
+              ({formatDate(weekStart, 'DATE_SHORT')} - {formatDate(weekEnd, 'DATE_SHORT')})
             </span>
           </div>
-          <Button variant="outline" size="sm" onClick={() => navigateWeek('next')}>
+          <Button variant="outline" size="sm" onClick={() => navigateWeek('next')} className="h-9 w-9 p-0 sm:h-10 sm:w-10">
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
@@ -371,57 +373,63 @@ export default function PayrollPage() {
 
       {/* Status + Actions Bar */}
       <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex flex-col gap-2 sm:gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
               <div className={cn(
-                'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium',
+                'inline-flex items-center gap-1.5 sm:gap-2 rounded-full border px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-medium',
                 hasPayrollGenerated
                   ? 'border-green-500/30 bg-green-500/10 text-green-500'
                   : 'border-blue-500/30 bg-blue-500/10 text-blue-500'
               )}>
                 {hasPayrollGenerated ? (
-                  <><CheckCircle className="h-4 w-4" /> Payroll Generated</>
+                  <><CheckCircle className="h-3 w-3 sm:h-4 sm:w-4" /> Payroll Generated</>
                 ) : (
-                  <><Clock className="h-4 w-4" /> Live Preview</>
+                  <><Clock className="h-3 w-3 sm:h-4 sm:w-4" /> Live Preview</>
                 )}
               </div>
-              <span className="text-sm text-muted-foreground">
-                {grandTotals.totalWorkers} workers &middot; {formatCurrency(grandTotals.grossPayroll)} gross
+              <span className="text-xs sm:text-sm text-muted-foreground">
+                {grandTotals.totalWorkers} workers
               </span>
             </div>
 
             {!hasPayrollGenerated && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2">
                 {!showPreview ? (
                   <Button
                     variant="outline"
-                    className="gap-2"
+                    className="gap-2 text-xs sm:text-sm"
+                    size="sm"
                     onClick={() => setShowPreview(true)}
                     disabled={employeeSummaries.length === 0}
                   >
-                    <Eye className="h-4 w-4" />
-                    Preview Payroll
+                    <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    <span className="hidden sm:inline">Preview Payroll</span>
+                    <span className="sm:hidden">Preview</span>
                   </Button>
                 ) : (
                   <>
                     <Button
                       variant="outline"
+                      size="sm"
+                      className="text-xs sm:text-sm"
                       onClick={() => setShowPreview(false)}
                     >
                       Cancel
                     </Button>
                     <Button
-                      className="gap-2"
+                      className="gap-2 text-xs sm:text-sm"
+                      size="sm"
                       onClick={() => generateMutation.mutate()}
                       disabled={generateMutation.isPending}
                     >
                       {generateMutation.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
                       ) : (
-                        <ShieldCheck className="h-4 w-4" />
+                        <ShieldCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                       )}
-                      Approve &amp; Generate Payroll
+                      <span className="hidden sm:inline">Approve &amp; Generate</span>
+                      <span className="sm:hidden">Generate</span>
                     </Button>
                   </>
                 )}
@@ -440,8 +448,8 @@ export default function PayrollPage() {
           {/* ========== SECTION 2: SITE SUMMARY CARDS ========== */}
           {siteTotals.length > 0 && (
             <div>
-              <h2 className="mb-3 text-lg font-semibold text-foreground">Site Summary</h2>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <h2 className="mb-2 sm:mb-3 text-base sm:text-lg font-semibold text-foreground">Site Summary</h2>
+              <div className="grid gap-2 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                 {siteTotals.map((st) => (
                   <SitePayrollCard
                     key={st.siteId}
@@ -459,17 +467,17 @@ export default function PayrollPage() {
 
           {/* ========== SECTION 3: WORKER PAYROLL CARDS ========== */}
           <div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
-              <h2 className="text-lg font-semibold text-foreground">
+            <div className="flex flex-col gap-2 sm:gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
+              <h2 className="text-base sm:text-lg font-semibold text-foreground">
                 {hasPayrollGenerated ? 'Payroll Records' : 'Worker Payroll'}
               </h2>
-              <div className="relative max-w-sm flex-1">
+              <div className="relative flex-1 sm:max-w-xs">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Search workers..."
+                  placeholder="Search..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
+                  className="pl-9 text-sm"
                 />
               </div>
             </div>

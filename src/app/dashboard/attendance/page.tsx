@@ -367,26 +367,26 @@ export default function AttendancePage() {
   if (!isAuthorized) return null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Attendance</h1>
-          <p className="text-muted-foreground">
+      <div className="flex flex-col gap-3 sm:gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Attendance</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">
             Mark daily attendance — Morning / Evening / OT
           </p>
         </div>
 
         {/* Date Navigation */}
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => navigateDate('prev')}>
+        <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={() => navigateDate('prev')} className="h-9 w-9 p-0 sm:h-10 sm:w-10">
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5">
-            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium">{formatDate(selectedDate)}</span>
+          <div className="flex items-center gap-1 sm:gap-2 rounded-md border border-border bg-background px-2 sm:px-3 py-1.5 text-xs sm:text-sm whitespace-nowrap">
+            <CalendarIcon className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+            <span className="font-medium">{formatDate(selectedDate, 'DATE_SHORT')}</span>
             {isToday && (
-              <span className="rounded bg-primary/20 px-1.5 py-0.5 text-xs text-primary">
+              <span className="rounded bg-primary/20 px-1 sm:px-1.5 py-0.5 text-xs text-primary font-medium">
                 Today
               </span>
             )}
@@ -396,11 +396,12 @@ export default function AttendancePage() {
             size="sm"
             onClick={() => navigateDate('next')}
             disabled={isToday}
+            className="h-9 w-9 p-0 sm:h-10 sm:w-10"
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
           {!isToday && (
-            <Button variant="ghost" size="sm" onClick={() => setSelectedDate(new Date())}>
+            <Button variant="ghost" size="sm" onClick={() => setSelectedDate(new Date())} className="h-9 text-xs">
               Today
             </Button>
           )}
@@ -410,6 +411,7 @@ export default function AttendancePage() {
             size="sm"
             onClick={() => queryClient.invalidateQueries({ queryKey: ['active-employees'] })}
             title="Refresh employee list if roles changed"
+            className="h-9 w-9 p-0 sm:h-10 sm:w-10"
           >
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -418,16 +420,16 @@ export default function AttendancePage() {
 
       {/* Site Selector */}
       <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-2">
-              <MapPin className="h-5 w-5 text-muted-foreground" />
-              <label className="font-medium">Select Site:</label>
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+            <div className="flex items-center gap-2 shrink-0">
+              <MapPin className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
+              <label className="font-medium text-sm">Site:</label>
             </div>
             <select
               value={selectedSiteId}
               onChange={(e) => setSelectedSiteId(e.target.value)}
-              className="h-10 flex-1 rounded-md border border-border bg-background px-3 text-sm"
+              className="flex-1 min-w-0 h-10 rounded-md border border-border bg-background px-3 text-sm"
             >
               <option value="">— Select a site —</option>
               {sites.map((site) => (
@@ -442,12 +444,12 @@ export default function AttendancePage() {
 
       {/* Multi-site Rules Info */}
       <Card className="border-blue-500/20 bg-blue-500/5">
-        <CardContent className="p-4">
-          <div className="space-y-2 text-sm">
+        <CardContent className="p-3 sm:p-4">
+          <div className="space-y-2 text-xs sm:text-sm">
             <p className="font-medium text-foreground">Multi-Site Work Rules:</p>
-            <ul className="list-inside space-y-1 text-muted-foreground text-xs">
+            <ul className="list-inside space-y-1 text-muted-foreground">
               <li>✓ <strong className="text-foreground">Owner, CEO, Manager, Supervisor</strong> — Can visit multiple sites daily</li>
-              <li>✓ <strong className="text-foreground">Bass, Helper, Draughtsman</strong> — Morning at one site, evening at another (half-day each)</li>
+              <li>✓ <strong className="text-foreground">Bass, Helper, Draughtsman</strong> — Morning at one site, evening at another</li>
             </ul>
           </div>
         </CardContent>
@@ -456,55 +458,55 @@ export default function AttendancePage() {
       {selectedSiteId && (
         <>
           {/* Stats Cards */}
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
             <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg bg-green-500/20 p-2">
-                    <CheckCircle className="h-5 w-5 text-green-500" />
+              <CardContent className="p-3 sm:p-4">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <div className="rounded-lg bg-green-500/20 p-1.5 sm:p-2 shrink-0">
+                    <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-500" />
                   </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Present</p>
-                    <p className="text-2xl font-bold">{presentCount}</p>
+                  <div className="min-w-0">
+                    <p className="text-xs sm:text-sm text-muted-foreground">Present</p>
+                    <p className="text-xl sm:text-2xl font-bold">{presentCount}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
             <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg bg-blue-500/20 p-2">
-                    <Users className="h-5 w-5 text-blue-500" />
+              <CardContent className="p-3 sm:p-4">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <div className="rounded-lg bg-blue-500/20 p-1.5 sm:p-2 shrink-0">
+                    <Users className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
                   </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Full Day</p>
-                    <p className="text-2xl font-bold">{fullDayCount}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg bg-yellow-500/20 p-2">
-                    <Coffee className="h-5 w-5 text-yellow-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Half Day</p>
-                    <p className="text-2xl font-bold">{halfDayCount}</p>
+                  <div className="min-w-0">
+                    <p className="text-xs sm:text-sm text-muted-foreground">Full Day</p>
+                    <p className="text-xl sm:text-2xl font-bold">{fullDayCount}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
             <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg bg-orange-500/20 p-2">
-                    <Clock className="h-5 w-5 text-orange-500" />
+              <CardContent className="p-3 sm:p-4">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <div className="rounded-lg bg-yellow-500/20 p-1.5 sm:p-2 shrink-0">
+                    <Coffee className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-500" />
                   </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total OT</p>
-                    <p className="text-2xl font-bold">{totalOT}h</p>
+                  <div className="min-w-0">
+                    <p className="text-xs sm:text-sm text-muted-foreground">Half Day</p>
+                    <p className="text-xl sm:text-2xl font-bold">{halfDayCount}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3 sm:p-4">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <div className="rounded-lg bg-orange-500/20 p-1.5 sm:p-2 shrink-0">
+                    <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs sm:text-sm text-muted-foreground">Total OT</p>
+                    <p className="text-xl sm:text-2xl font-bold">{totalOT}h</p>
                   </div>
                 </div>
               </CardContent>
@@ -512,20 +514,20 @@ export default function AttendancePage() {
           </div>
 
           {/* Search + Save */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative max-w-sm flex-1">
+          <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative flex-1 min-w-0">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search workers..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
+                className="pl-9 text-sm"
               />
             </div>
             <Button
               onClick={() => saveMutation.mutate()}
               disabled={!isDirty || saveMutation.isPending}
-              className="gap-2"
+              className="gap-2 w-full sm:w-auto"
               size="lg"
             >
               {saveMutation.isPending ? (
@@ -533,7 +535,8 @@ export default function AttendancePage() {
               ) : (
                 <Save className="h-4 w-4" />
               )}
-              Save Attendance
+              <span className="hidden sm:inline">Save Attendance</span>
+              <span className="sm:hidden">Save</span>
             </Button>
           </div>
 
@@ -554,19 +557,19 @@ export default function AttendancePage() {
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-border text-left">
-                        <th className="p-2 sm:p-4 font-medium text-xs sm:text-sm text-muted-foreground">Name</th>
-                        <th className="p-2 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">
-                          <div className="flex items-center justify-center gap-1">
-                            <Sun className="h-4 w-4" /> <span className="hidden sm:inline">Morning</span>
+                        <th className="p-1.5 sm:p-4 font-medium text-xs sm:text-sm text-muted-foreground">Name</th>
+                        <th className="p-1 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">
+                          <div className="flex items-center justify-center gap-0.5 sm:gap-1">
+                            <Sun className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> <span className="hidden sm:inline">Morning</span>
                           </div>
                         </th>
-                        <th className="p-2 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">
-                          <div className="flex items-center justify-center gap-1">
-                            <Moon className="h-4 w-4" /> <span className="hidden sm:inline">Evening</span>
+                        <th className="p-1 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">
+                          <div className="flex items-center justify-center gap-0.5 sm:gap-1">
+                            <Moon className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> <span className="hidden sm:inline">Evening</span>
                           </div>
                         </th>
-                        <th className="p-2 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">OT</th>
-                        <th className="p-2 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">Status</th>
+                        <th className="p-1 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">OT</th>
+                        <th className="p-1 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">Status</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -590,16 +593,16 @@ export default function AttendancePage() {
                             className="border-b border-border/50 transition-colors hover:bg-muted/30"
                           >
                             {/* Name + Role */}
-                            <td className="p-2 sm:p-4">
-                              <div className="flex items-center gap-2 sm:gap-3">
-                                <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-primary/20 font-medium text-primary text-xs sm:text-sm">
+                            <td className="p-1.5 sm:p-4">
+                              <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
+                                <div className="flex h-7 w-7 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-full bg-primary/20 font-medium text-primary text-xs sm:text-sm">
                                   {row.workerName.charAt(0).toUpperCase()}
                                 </div>
-                                <div>
-                                  <p className="font-medium">{row.workerName}</p>
+                                <div className="min-w-0">
+                                  <p className="font-medium text-xs sm:text-sm truncate">{row.workerName}</p>
                                   <span
                                     className={cn(
-                                      'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
+                                      'inline-flex rounded-full px-1.5 sm:px-2 py-0.5 text-xs font-medium max-w-full',
                                       roleBadgeColors[row.role]
                                     )}
                                   >
@@ -666,23 +669,23 @@ export default function AttendancePage() {
                                 </span>
                                 {row.otHours > 0 && (
                                   <span className="block text-xs text-orange-500">
-                                    +{row.otHours}h OT
+                                    +{row.otHours}h
                                   </span>
                                 )}
 
                                 {/* Show total sites covered today only for owner/ceo/manager/supervisor */}
                                 {(workerSiteCoverage.get(row.workerId)?.size || 0) > 1 &&
                                   ['owner', 'ceo', 'manager', 'supervisor'].includes(row.role) && (
-                                  <span className="block rounded bg-purple-500/20 px-2 py-0.5 text-xs text-purple-400 font-medium">
-                                    {workerSiteCoverage.get(row.workerId)?.size || 0} sites today
+                                  <span className="block rounded bg-purple-500/20 px-1 py-0.5 text-xs text-purple-400 font-medium">
+                                    {workerSiteCoverage.get(row.workerId)?.size || 0}📍
                                   </span>
                                 )}
 
                                 {/* Warning for bass/helper if marked at multiple sites */}
                                 {(workerSiteCoverage.get(row.workerId)?.size || 0) > 1 &&
                                   ['bass', 'helper', 'draughtsman'].includes(row.role) && (
-                                  <span className="block rounded bg-red-500/20 px-2 py-0.5 text-xs text-red-400 font-medium">
-                                    ⚠️ Split between sites
+                                  <span className="block rounded bg-red-500/20 px-1 py-0.5 text-xs text-red-400 font-medium">
+                                    ⚠️ Split
                                   </span>
                                 )}
                               </div>
@@ -717,7 +720,7 @@ export default function AttendancePage() {
           )}
 
           {/* Info */}
-          <div className="text-sm text-muted-foreground">
+          <div className="text-xs sm:text-sm text-muted-foreground">
             Showing {filteredRows.length} of {workerRows.length} workers
           </div>
         </>
