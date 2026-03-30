@@ -57,10 +57,10 @@ export interface UserProfile extends User {
   departmentId?: string;
   supervisorId?: string;
   assignedSites: string[];
-  dailyRate: number;   // Per day payment
-  otRate: number;      // OT hourly rate
-  hourlyRate: number;  // Legacy / calculated
-  weeklyRate: number;  // Legacy / calculated
+  dailyRate: number;   // Per day payment (REQUIRED)
+  otRate?: number;     // DEPRECATED: OT rate now derived as dailyRate / 8 at runtime
+  hourlyRate?: number; // Legacy / calculated
+  weeklyRate?: number; // Legacy / calculated
   bankDetails?: BankDetails;
   documents: UserDocument[];
   metadata: UserMetadata;
@@ -210,14 +210,33 @@ export type SegmentStatus =
  * - OT hours (number)
  * A worker can work TWO different sites in the same day.
  */
+/**
+ * Supervisor visit record for multi-site tracking
+ */
+export interface SimpleSupervisorVisit {
+  siteId: string;
+  visited: boolean;
+  notes?: string;
+  visitedAt: string; // ISO timestamp
+}
+
 export interface SimpleAttendance {
   id: string;
   date: string; // YYYY-MM-DD
   workerId: string;
   workerName: string;
-  morningSite: string | null;  // siteId or null if absent
-  eveningSite: string | null;  // siteId or null if absent
-  otHours: number;             // overtime hours
+  role?: string; // NEW: role to determine attendance structure
+
+  // For LABOR WORKERS (bass, helper, draughtsman)
+  morningSite?: string | null;  // siteId or null if absent
+  eveningSite?: string | null;  // siteId or null if absent
+  siteOtHours?: Record<string, number>; // Record of siteId to OT hours
+
+  // For SUPERVISORS (owner, ceo, manager, supervisor)
+  // use siteVisits array instead of morning/evening
+  siteVisits?: SimpleSupervisorVisit[];
+
+  otHours?: number;             // overtime hours
   supervisorId: string;
   notes?: string;
   createdAt: Date;
@@ -356,7 +375,7 @@ export interface WorkerPayrollSummary {
   workerName: string;
   workerRole: UserRole;
   dailyRate: number;
-  otRate: number;
+  otRate: number;        // DERIVED: dailyRate / 8 (not stored)
   siteBreakdowns: SiteBreakdown[];
   totalDays: number;
   totalOtHours: number;
@@ -388,6 +407,42 @@ export interface PayrollReport {
 // =====================================================
 // ADVANCE & LOAN TYPES
 // =====================================================
+
+export interface Advance {
+  id: string;
+  workerId: string;
+  amount: number;
+  date: string;
+  reason: string;
+  deducted: boolean;
+  deductionWeek: string | null;
+  createdBy?: string;
+  createdAt?: Date;
+}
+
+export interface WorkerWeeklyPayroll {
+  workerId: string;
+  workerName: string;
+  role: string;
+  grossPay: number;
+  pendingAdvances: Advance[];
+  selectedAdvanceDeductions: Advance[];
+  advanceDeductionTotal: number;
+  loanDeduction: number;
+  finalPay: number;
+}
+
+export interface FinalPayrollSummary {
+  totalWorkers: number;
+  totalDaysWorked: number;
+  totalOtHours: number;
+  totalBasePay: number;
+  totalOtPay: number;
+  totalGrossPay: number;
+  totalAdvanceDeductions: number;
+  totalLoanDeductions: number;
+  finalPayrollTotal: number;
+}
 
 /**
  * Salary advance request

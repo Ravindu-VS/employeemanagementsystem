@@ -85,9 +85,12 @@ export {
   rejectAdvance,
   cancelAdvance,
   markAdvanceDeducted,
-  getUndeductedAdvances,
   getAdvancesForPayrollWeek,
   getAllPendingAdvances,
+  getPendingAdvancesByWorkerIds,
+  checkDuplicatePendingAdvance,
+  updateAdvanceRequest,
+  deleteAdvance,
 } from './advance-service';
 
 // Loan Service

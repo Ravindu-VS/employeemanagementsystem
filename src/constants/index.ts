@@ -10,11 +10,11 @@
 // =====================================================
 
 export const APP_CONFIG = {
-  name: 'Employee Management System',
-  shortName: 'EMS',
+  name: 'KK & SONS Architectural Services EMS',
+  shortName: 'KK & SONS EMS',
   version: '1.0.0',
-  description: 'Complete workforce management solution',
-  company: 'Your Company Name',
+  description: 'Construction and workforce management platform for KK & SONS Architectural Services',
+  company: 'KK & SONS Architectural Services',
   supportEmail: 'support@company.com',
   supportPhone: '+94 11 234 5678',
 } as const;
@@ -202,7 +202,7 @@ export const ATTENDANCE_CONFIG = {
 
 export const PAYROLL_CONFIG = {
   // Week configuration
-  WEEK_START_DAY: 1, // Monday = 1, Sunday = 0
+  WEEK_START_DAY: 0, // Monday = 1, Sunday = 0 (CHANGED: Sunday = 0 to include emergency Sunday work)
   
   // Overtime rates
   OVERTIME_MULTIPLIER: 1.5,

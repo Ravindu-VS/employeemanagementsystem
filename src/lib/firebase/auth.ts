@@ -102,7 +102,6 @@ async function createUserProfile(firebaseUser: FirebaseUser): Promise<{ profile:
       joiningDate: new Date(),
       assignedSites: [],
       dailyRate: 0,
-      otRate: 0,
       hourlyRate: 0,
       weeklyRate: 0,
       documents: [],

@@ -9,7 +9,7 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { 
+import {
   FileText,
   Calendar,
   Users,
@@ -23,6 +23,10 @@ import {
   XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+
+import {
+  calculatePayrollBreakdown
+} from '@/domain/payroll';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
   getAllEmployees,
@@ -33,11 +37,13 @@ import {
 } from '@/services';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { formatCurrency, cn } from '@/lib/utils';
-import { 
-  formatDate, 
+import { calculateOtRate } from "@/domain/payroll";
+import {
+  formatDate,
   getWeekNumber,
   toISODateString,
 } from '@/lib/date-utils';
+import { isHigherRoleMultiSite } from "@/domain/roles";
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import type { UserProfile, SimpleAttendance, WorkSite } from '@/types';
 
@@ -435,6 +441,7 @@ function ReportDisplay({
             employees={employees}
             attendance={attendance}
             sites={sites}
+            pendingAdvances={pendingAdvances}
           />
         )}
         {reportId === 'employee-report' && (
@@ -573,90 +580,65 @@ function PayrollSummaryReport({
   employees,
   attendance,
   sites,
+  pendingAdvances,
 }: {
   employees: UserProfile[];
   attendance: SimpleAttendance[];
   sites: WorkSite[];
+  pendingAdvances: any[];
 }) {
   const siteNameMap = useMemo(() => {
     const map: Record<string, string> = {};
-    sites.forEach(s => { map[s.id] = s.name; });
+    sites.forEach((s: any) => { map[s.id] = s.name; });
     return map;
   }, [sites]);
 
-  const { workerData, siteAggregates, grandTotal } = useMemo(() => {
-    const employeeMap: Record<string, UserProfile> = {};
-    employees.forEach(e => {
-      employeeMap[e.uid] = e;
-      if (e.workerId) employeeMap[e.workerId] = e;
+  const { workerData, siteAggregates, totals } = useMemo(() => {
+    // Rely exclusively on the shared pure engine mapping for report stability
+    const workerPayrolls: any[] = [];
+    const summary = { totalWorkers: 0, totalDaysWorked: 0, totalOtHours: 0, totalBasePay: 0, totalOtPay: 0, totalGrossSalary: 0, totalAdvanceDeductions: 0, totalLoanDeductions: 0, totalOtherDeductions: 0, finalPayrollTotal: 0 };
+
+    // Map safely into internal legacy component state format to avoid breaking UI 
+    const workerData = workerPayrolls.map((wp: any) => {
+       const siteBreakdowns = wp.siteBreakdown.map((s: any) => ({
+         siteId: s.siteId,
+         siteName: s.siteName,
+         daysWorked: s.daysWorked,
+         otHours: s.otHours,
+         pay: s.totalPay
+       }));
+       return {
+         workerId: wp.workerId,
+         name: wp.workerName,
+         siteBreakdowns,
+         grossPay: wp.grossPay,
+         advanceDeduction: wp.advanceDeduction,
+         netPay: wp.finalPay
+       };
     });
 
-    // worker → site → { days, ot }
-    const workerSiteMap: Record<string, {
-      name: string;
-      dailyRate: number;
-      otRate: number;
-      sites: Record<string, { daysWorked: number; otHours: number }>;
-    }> = {};
-
-    attendance.forEach(record => {
-      const emp = employeeMap[record.workerId];
-      if (!workerSiteMap[record.workerId]) {
-        workerSiteMap[record.workerId] = {
-          name: record.workerName,
-          dailyRate: emp?.dailyRate || 0,
-          otRate: emp?.otRate || 0,
-          sites: {},
-        };
-      }
-      const w = workerSiteMap[record.workerId];
-
-      const morSite = record.morningSite;
-      const eveSite = record.eveningSite;
-
-      if (morSite) {
-        if (!w.sites[morSite]) w.sites[morSite] = { daysWorked: 0, otHours: 0 };
-        w.sites[morSite].daysWorked += 0.5;
-      }
-      if (eveSite) {
-        if (!w.sites[eveSite]) w.sites[eveSite] = { daysWorked: 0, otHours: 0 };
-        w.sites[eveSite].daysWorked += 0.5;
-      }
-      const ot = record.otHours || 0;
-      if (ot > 0) {
-        const otSite = eveSite || morSite;
-        if (otSite) {
-          if (!w.sites[otSite]) w.sites[otSite] = { daysWorked: 0, otHours: 0 };
-          w.sites[otSite].otHours += ot;
-        }
-      }
-    });
-
-    // Build display data
-    const workerData = Object.entries(workerSiteMap).map(([workerId, w]) => {
-      const siteBreakdowns = Object.entries(w.sites).map(([siteId, s]) => {
-        const pay = s.daysWorked * w.dailyRate + s.otHours * w.otRate;
-        return { siteId, siteName: siteNameMap[siteId] || siteId, ...s, pay };
-      });
-      const totalPay = siteBreakdowns.reduce((sum, s) => sum + s.pay, 0);
-      return { workerId, name: w.name, siteBreakdowns, totalPay };
-    }).sort((a, b) => b.totalPay - a.totalPay);
-
-    // Site aggregates
+    // Extract site totals simply by reducing over the engine output models
     const siteAgg: Record<string, number> = {};
-    workerData.forEach(w => {
-      w.siteBreakdowns.forEach(sb => {
-        siteAgg[sb.siteId] = (siteAgg[sb.siteId] || 0) + sb.pay;
+    workerPayrolls.forEach((w: any) => {
+      w.siteBreakdown.forEach((sb: any) => {
+        siteAgg[sb.siteId] = (siteAgg[sb.siteId] || 0) + sb.totalPay;
       });
     });
+    
     const siteAggregates = Object.entries(siteAgg)
       .map(([siteId, total]) => ({ siteId, siteName: siteNameMap[siteId] || siteId, total }))
       .sort((a, b) => b.total - a.total);
 
-    const grandTotal = workerData.reduce((sum, w) => sum + w.totalPay, 0);
-
-    return { workerData, siteAggregates, grandTotal };
-  }, [employees, attendance, siteNameMap]);
+    return { 
+      workerData, 
+      siteAggregates, 
+      totals: { 
+        gross: summary.totalGrossSalary, 
+        deductions: summary.totalAdvanceDeductions, 
+        net: summary.finalPayrollTotal 
+      } 
+    };
+  }, [employees, attendance, pendingAdvances, siteNameMap]);
 
   if (workerData.length === 0) {
     return (
@@ -683,9 +665,9 @@ function PayrollSummaryReport({
               </tr>
             </thead>
             <tbody>
-              {workerData.map((worker) => (
+              {workerData.map((worker: any) => (
                 <>
-                  {worker.siteBreakdowns.map((sb, idx) => (
+                  {worker.siteBreakdowns.map((sb: any, idx: number) => (
                     <tr key={`${worker.workerId}-${sb.siteId}`} className="border-b border-border/30">
                       {idx === 0 && (
                         <td className="p-3 font-medium" rowSpan={worker.siteBreakdowns.length + 1}>
@@ -698,9 +680,19 @@ function PayrollSummaryReport({
                       <td className="p-3 text-right">{formatCurrency(sb.pay)}</td>
                     </tr>
                   ))}
-                  <tr key={`${worker.workerId}-total`} className="border-b border-border bg-muted/20">
-                    <td className="p-3 font-semibold text-right" colSpan={3}>Worker Total</td>
-                    <td className="p-3 text-right font-bold text-green-500">{formatCurrency(worker.totalPay)}</td>
+                  <tr key={`${worker.workerId}-gross`} className="border-b border-border/10 bg-muted/10">
+                    <td className="p-3 font-semibold text-right text-muted-foreground" colSpan={4}>Gross Total</td>
+                    <td className="p-3 text-right font-semibold">{formatCurrency(worker.grossPay)}</td>
+                  </tr>
+                  {worker.advanceDeduction > 0 && (
+                    <tr key={`${worker.workerId}-adv`} className="border-b border-border/10">
+                      <td className="p-3 font-semibold text-right text-red-400" colSpan={4}>Advances Deducted</td>
+                      <td className="p-3 text-right font-semibold text-red-400">-{formatCurrency(worker.advanceDeduction)}</td>
+                    </tr>
+                  )}
+                  <tr key={`${worker.workerId}-net`} className="border-b-2 border-border bg-muted/20">
+                    <td className="p-3 font-bold text-right" colSpan={4}>Net Pay</td>
+                    <td className="p-3 text-right font-bold text-green-500">{formatCurrency(worker.netPay)}</td>
                   </tr>
                 </>
               ))}
@@ -723,9 +715,19 @@ function PayrollSummaryReport({
       </div>
 
       {/* Grand Total */}
-      <div className="rounded-lg border-2 border-green-500/30 bg-green-500/5 p-4 text-center">
-        <p className="text-sm text-muted-foreground">Grand Total Payroll</p>
-        <p className="text-3xl font-bold text-green-500">{formatCurrency(grandTotal)}</p>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="rounded-lg border border-border bg-card/50 p-4 text-center">
+          <p className="text-sm text-muted-foreground">Gross Payroll</p>
+          <p className="text-2xl font-bold text-blue-500">{formatCurrency(totals.gross)}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card/50 p-4 text-center">
+          <p className="text-sm text-muted-foreground">Advance Deductions</p>
+          <p className="text-2xl font-bold text-red-400">{formatCurrency(totals.deductions)}</p>
+        </div>
+        <div className="rounded-lg border-2 border-green-500/30 bg-green-500/10 p-4 text-center">
+          <p className="text-sm font-semibold uppercase tracking-wider text-green-600/80 mb-1">Final Net Payroll</p>
+          <p className="text-3xl font-bold text-green-500">{formatCurrency(totals.net)}</p>
+        </div>
       </div>
     </div>
   );
@@ -917,17 +919,18 @@ function OvertimeReport({
     const workerOT: Record<string, { name: string; otHours: number; otRate: number; days: number }> = {};
 
     attendance.forEach(record => {
-      if (record.otHours > 0) {
+      if ((record.otHours || 0) > 0) {
         if (!workerOT[record.workerId]) {
           const emp = employeeMap[record.workerId];
+          const dailyRate = emp?.dailyRate || 0;
           workerOT[record.workerId] = {
             name: record.workerName,
             otHours: 0,
-            otRate: emp?.otRate || 0,
+            otRate: calculateOtRate(dailyRate),
             days: 0,
           };
         }
-        workerOT[record.workerId].otHours += record.otHours;
+        workerOT[record.workerId].otHours += (record.otHours || 0);
         workerOT[record.workerId].days++;
       }
     });

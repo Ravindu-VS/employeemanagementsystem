@@ -10,8 +10,8 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { 
-  ArrowLeft, 
+import {
+  ArrowLeft,
   Edit,
   Trash2,
   Mail,
@@ -38,6 +38,7 @@ import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { formatDate } from '@/lib/date-utils';
 import { formatCurrency, cn } from '@/lib/utils';
+import { calculateOtRate } from '@/domain/payroll';
 import { ROUTES, USER_ROLES } from '@/constants';
 import type { UserRole } from '@/types';
 
@@ -403,9 +404,9 @@ export default function EmployeeDetailPage() {
             <div className="flex items-center gap-3">
               <Clock className="h-4 w-4 text-muted-foreground" />
               <div>
-                <p className="text-sm text-muted-foreground">OT Rate (per hour)</p>
+                <p className="text-sm text-muted-foreground">OT Rate (Auto-calculated)</p>
                 <p className="font-medium">
-                  {formatCurrency(employee.otRate || (employee.dailyRate || 0) * 1.5 / 8)}
+                  {formatCurrency(calculateOtRate(employee.dailyRate || 0))} / hour
                 </p>
               </div>
             </div>

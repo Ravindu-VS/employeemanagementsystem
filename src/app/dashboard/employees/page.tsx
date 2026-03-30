@@ -10,9 +10,9 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { 
-  Plus, 
-  Search, 
+import {
+  Plus,
+  Search,
   Filter,
   MoreHorizontal,
   Eye,
@@ -29,6 +29,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmployeeCard } from '@/components/employees/EmployeeCard';
 import { getAllEmployees, deactivateEmployee, reactivateEmployee, deleteEmployee } from '@/services';
 import { createAuditLog } from '@/services/audit-service';
 import { useRequireRole } from '@/components/providers/auth-provider';
@@ -325,126 +326,149 @@ export default function EmployeesPage() {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border text-left">
-                    <th className="p-4 font-medium text-muted-foreground">Employee</th>
-                    <th className="p-4 font-medium text-muted-foreground">Role</th>
-                    <th className="p-4 font-medium text-muted-foreground">Contact</th>
-                    <th className="p-4 font-medium text-muted-foreground">Daily Rate</th>
-                    <th className="p-4 font-medium text-muted-foreground">Status</th>
-                    <th className="p-4 font-medium text-muted-foreground">Joined</th>
-                    <th className="p-4 font-medium text-muted-foreground">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredEmployees.map((employee) => (
-                    <tr 
-                      key={employee.uid} 
-                      className="border-b border-border/50 transition-colors hover:bg-muted/30"
-                    >
-                      <td className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 font-medium text-primary">
-                            {(employee.displayName || 'U').charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <p className="font-medium">{employee.displayName || 'Unnamed'}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {employee.workerId || 'No ID'}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <span className={cn(
-                          'inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium',
-                          roleBadgeColors[employee.role]
-                        )}>
-                          {USER_ROLES[employee.role]?.label || employee.role}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-1.5 text-sm">
-                            <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span className="truncate max-w-[150px]">{employee.email}</span>
-                          </div>
-                          {employee.phone && (
-                            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                              <Phone className="h-3.5 w-3.5" />
-                              {employee.phone}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <span className="font-medium">
-                          LKR {employee.dailyRate?.toLocaleString() || '0'}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        <span className={cn(
-                          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-                          employee.isActive 
-                            ? 'bg-green-500/20 text-green-400' 
-                            : 'bg-red-500/20 text-red-400'
-                        )}>
-                          <span className={cn(
-                            'h-1.5 w-1.5 rounded-full',
-                            employee.isActive ? 'bg-green-400' : 'bg-red-400'
-                          )} />
-                          {employee.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="p-4 text-sm text-muted-foreground">
-                        {formatDate(employee.joiningDate || employee.createdAt)}
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <Link href={ROUTES.EMPLOYEES.DETAIL(employee.uid)}>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </Link>
-                          {canManage && (
-                            <>
-                              <Link href={ROUTES.EMPLOYEES.EDIT(employee.uid)}>
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </Link>
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="h-8 w-8 p-0"
-                                onClick={() => handleToggleStatus(employee)}
-                              >
-                                {employee.isActive ? (
-                                  <UserX className="h-4 w-4 text-red-400" />
-                                ) : (
-                                  <UserCheck className="h-4 w-4 text-green-400" />
-                                )}
-                              </Button>
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="h-8 w-8 p-0"
-                                onClick={() => handleDelete(employee)}
-                                disabled={deletingId === employee.uid}
-                              >
-                                <Trash2 className="h-4 w-4 text-red-400" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </td>
+            <>
+              {/* Desktop Table View (visible on md+) */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border text-left">
+                      <th className="p-4 font-medium text-muted-foreground">Employee</th>
+                      <th className="p-4 font-medium text-muted-foreground">Role</th>
+                      <th className="p-4 font-medium text-muted-foreground">Contact</th>
+                      <th className="p-4 font-medium text-muted-foreground">Daily Rate</th>
+                      <th className="p-4 font-medium text-muted-foreground">Status</th>
+                      <th className="p-4 font-medium text-muted-foreground">Joined</th>
+                      <th className="p-4 font-medium text-muted-foreground">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {filteredEmployees.map((employee) => (
+                      <tr
+                        key={employee.uid}
+                        className="border-b border-border/50 transition-colors hover:bg-muted/30"
+                      >
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 font-medium text-primary">
+                              {(employee.displayName || 'U').charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="font-medium">{employee.displayName || 'Unnamed'}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {employee.workerId || 'No ID'}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <span
+                            className={cn(
+                              'inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium',
+                              roleBadgeColors[employee.role]
+                            )}
+                          >
+                            {USER_ROLES[employee.role]?.label || employee.role}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 text-sm">
+                              <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span className="truncate max-w-[150px]">{employee.email}</span>
+                            </div>
+                            {employee.phone && (
+                              <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                                <Phone className="h-3.5 w-3.5" />
+                                {employee.phone}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <span className="font-medium">
+                            LKR {employee.dailyRate?.toLocaleString() || '0'}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <span
+                            className={cn(
+                              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
+                              employee.isActive
+                                ? 'bg-green-500/20 text-green-400'
+                                : 'bg-red-500/20 text-red-400'
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                'h-1.5 w-1.5 rounded-full',
+                                employee.isActive ? 'bg-green-400' : 'bg-red-400'
+                              )}
+                            />
+                            {employee.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="p-4 text-sm text-muted-foreground">
+                          {formatDate(employee.joiningDate || employee.createdAt)}
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-2">
+                            <Link href={ROUTES.EMPLOYEES.DETAIL(employee.uid)}>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                            {canManage && (
+                              <>
+                                <Link href={ROUTES.EMPLOYEES.EDIT(employee.uid)}>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                </Link>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0"
+                                  onClick={() => handleToggleStatus(employee)}
+                                >
+                                  {employee.isActive ? (
+                                    <UserX className="h-4 w-4 text-red-400" />
+                                  ) : (
+                                    <UserCheck className="h-4 w-4 text-green-400" />
+                                  )}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0"
+                                  onClick={() => handleDelete(employee)}
+                                  disabled={deletingId === employee.uid}
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-400" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card View (visible on < md) */}
+              <div className="md:hidden grid grid-cols-1 gap-4">
+                {filteredEmployees.map((employee) => (
+                  <EmployeeCard
+                    key={employee.uid}
+                    employee={employee}
+                    canManage={canManage}
+                    onToggleStatus={handleToggleStatus}
+                    onDelete={handleDelete}
+                    isDeleting={deletingId === employee.uid}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

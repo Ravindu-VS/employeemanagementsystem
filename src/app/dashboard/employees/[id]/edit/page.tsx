@@ -13,9 +13,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { 
-  ArrowLeft, 
-  Save, 
+import {
+  ArrowLeft,
+  Save,
   User,
   Mail,
   Phone,
@@ -37,6 +37,8 @@ import { createAuditLog } from '@/services/audit-service';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { ROUTES, USER_ROLES } from '@/constants';
+import { calculateOtRate } from '@/domain/payroll';
+import { formatCurrency } from '@/lib/utils';
 import type { UserRole } from '@/types';
 
 // Form validation schema
@@ -47,7 +49,6 @@ const employeeSchema = z.object({
   address: z.string().optional(),
   employeeId: z.string().optional(),
   dailyRate: z.number().min(0, 'Daily rate must be positive'),
-  otRate: z.number().min(0, 'OT rate must be positive').optional(),
   joinDate: z.string().optional(),
   emergencyContact: z.object({
     name: z.string().optional(),
@@ -89,11 +90,12 @@ export default function EditEmployeePage() {
     defaultValues: {
       role: 'helper',
       dailyRate: 0,
-      otRate: 0,
     },
   });
 
   const selectedRole = watch('role');
+  const dailyRate = watch('dailyRate');
+  const calculatedOtRate = calculateOtRate(dailyRate || 0);
 
   // Populate form with employee data
   useEffect(() => {
@@ -105,8 +107,7 @@ export default function EditEmployeePage() {
         address: employee.address || '',
         employeeId: employee.workerId || '',
         dailyRate: employee.dailyRate || 0,
-        otRate: employee.otRate || 0,
-        joinDate: employee.joiningDate 
+        joinDate: employee.joiningDate
           ? new Date(employee.joiningDate).toISOString().split('T')[0]
           : '',
         emergencyContact: {
@@ -133,7 +134,6 @@ export default function EditEmployeePage() {
         address: data.address,
         workerId: data.employeeId,
         dailyRate: data.dailyRate,
-        otRate: data.otRate || data.dailyRate * 1.5,
         joiningDate: data.joinDate ? new Date(data.joinDate) : employee?.joiningDate,
         emergencyContact: data.emergencyContact?.name,
         emergencyPhone: data.emergencyContact?.phone,
@@ -334,19 +334,17 @@ export default function EditEmployeePage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="otRate">OT Rate (LKR)</Label>
-                  <Input
-                    id="otRate"
-                    type="number"
-                    placeholder="Auto: 1.5x daily rate"
-                    icon={<DollarSign className="h-4 w-4" />}
-                    {...register('otRate', { valueAsNumber: true })}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Leave empty for 1.5x daily rate
-                  </p>
+                  <Label>OT Rate (Auto-calculated)</Label>
+                  <div className="rounded-md border border-border bg-muted/50 px-4 py-3 text-sm h-10 flex items-center">
+                    <p className="font-medium text-foreground">
+                      {formatCurrency(calculatedOtRate)} / hour
+                    </p>
+                  </div>
                 </div>
               </div>
+              <p className="text-xs text-muted-foreground">
+                OT rate is calculated as: Daily Rate ÷ 8 hours
+              </p>
             </CardContent>
           </Card>
 

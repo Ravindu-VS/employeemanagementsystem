@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =====================================================
  * ADVANCE SERVICE
  * =====================================================
@@ -283,4 +283,30 @@ export async function getAllPendingAdvances(): Promise<AdvanceRequest[]> {
     where('status', '==', 'approved'),
     where('isDeducted', '==', false),
   ]);
+}
+export async function getPendingAdvancesByWorkerIds(workerIds: string[]): Promise<any[]> {
+  if (!workerIds.length) return [];
+  return getDocuments(COLLECTIONS.ADVANCES, [
+    where('employeeId', 'in', workerIds),
+    where('status', '==', 'approved'),
+    where('isDeducted', '==', false)
+  ]);
+}
+
+export async function checkDuplicatePendingAdvance(employeeId: string): Promise<boolean> {
+  const docs = await getDocuments(COLLECTIONS.ADVANCES, [
+      where('employeeId', '==', employeeId),
+      where('status', '==', 'pending')
+  ]);
+  return docs.length > 0;
+}
+
+export async function updateAdvanceRequest(advanceId: string, data: any): Promise<void> {
+  data.updatedAt = new Date().toISOString();
+  await updateDocument(COLLECTIONS.ADVANCES, advanceId, data);
+}
+
+export async function deleteAdvance(advanceId: string): Promise<void> {
+  const { deleteDocument } = require('@/lib/firebase/firestore');
+  await deleteDocument(COLLECTIONS.ADVANCES, advanceId);
 }

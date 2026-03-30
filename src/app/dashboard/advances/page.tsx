@@ -28,13 +28,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { 
+import {
   getPendingAdvances,
   getAdvancesPaginated,
   approveAdvance,
   rejectAdvance,
   getAllEmployees,
   createAdvanceRequest,
+  checkDuplicatePendingAdvance,
+  updateAdvanceRequest,
+  deleteAdvance,
 } from '@/services';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
@@ -79,6 +82,8 @@ export default function AdvancesPage() {
   const [statusFilter, setStatusFilter] = useState<RequestStatus | 'all'>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingAdvanceId, setEditingAdvanceId] = useState<string | null>(null);
   const [newAdvance, setNewAdvance] = useState({
     employeeId: '',
     amount: '',
@@ -153,14 +158,22 @@ export default function AdvancesPage() {
 
   // Create mutation
   const createMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const employee = employees.find((e: any) => e.uid === newAdvance.employeeId);
       if (!employee) throw new Error('Please select an employee');
-      
+
+      const amount = parseFloat(newAdvance.amount);
+
+      // Check if employee already has a pending advance
+      const hasPendingAdvance = await checkDuplicatePendingAdvance(newAdvance.employeeId);
+      if (hasPendingAdvance) {
+        throw new Error('Employee already has a pending advance request. Supervisor must approve or reject it first.');
+      }
+
       return createAdvanceRequest({
         employeeId: newAdvance.employeeId,
         employeeName: employee.displayName || 'Unknown',
-        amount: parseFloat(newAdvance.amount),
+        amount,
         reason: newAdvance.reason,
         requestedAt: newAdvance.date,
         deductThisWeek: newAdvance.deductThisWeek,
@@ -180,6 +193,48 @@ export default function AdvancesPage() {
       toast({
         title: 'Error',
         description: error.message || 'Failed to create advance',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Edit mutation
+  const editMutation = useMutation({
+    mutationFn: ({ id, amount, reason, deductThisWeek, deductionWeek }: any) =>
+      updateAdvanceRequest(id, { amount, reason, deductThisWeek, deductionWeek }),
+    onSuccess: () => {
+      toast({
+        title: 'Advance Updated',
+        description: 'The advance request has been updated.',
+      });
+      setShowEditModal(false);
+      setEditingAdvanceId(null);
+      setNewAdvance({ employeeId: '', amount: '', reason: '', date: new Date().toISOString().split('T')[0], deductThisWeek: true, deductionWeek: '' });
+      queryClient.invalidateQueries({ queryKey: ['advances'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to update advance',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: (advanceId: string) => deleteAdvance(advanceId),
+    onSuccess: () => {
+      toast({
+        title: 'Advance Deleted',
+        description: 'The advance request has been cancelled.',
+      });
+      queryClient.invalidateQueries({ queryKey: ['advances'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete advance',
         variant: 'destructive',
       });
     },
@@ -362,7 +417,7 @@ export default function AdvancesPage() {
                         <div className="flex items-center gap-3 text-sm text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <Calendar className="h-3.5 w-3.5" />
-                            {formatDate(advance.createdAt)}
+                            {formatDate(advance.requestedAt || advance.createdAt)}
                           </span>
                           {advance.reason && (
                             <span className="truncate max-w-[200px]">
@@ -389,7 +444,7 @@ export default function AdvancesPage() {
 
                       {/* Actions */}
                       {advance.status === 'pending' && (
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           <Button
                             variant="outline"
                             size="sm"
@@ -403,6 +458,39 @@ export default function AdvancesPage() {
                               <CheckCircle className="h-3.5 w-3.5" />
                             )}
                             Approve
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1 text-blue-400 hover:text-blue-300"
+                            onClick={() => {
+                              setEditingAdvanceId(advance.id);
+                              setNewAdvance({
+                                employeeId: advance.employeeId,
+                                amount: advance.amount.toString(),
+                                reason: advance.reason || '',
+                                date: advance.requestedAt ? new Date(advance.requestedAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                                deductThisWeek: advance.deductThisWeek ?? true,
+                                deductionWeek: advance.deductionWeek || '',
+                              });
+                              setShowEditModal(true);
+                            }}
+                          >
+                            ✏️ Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1 text-red-400 hover:text-red-300"
+                            onClick={() => deleteMutation.mutate(advance.id)}
+                            disabled={deleteMutation.isPending}
+                          >
+                            {deleteMutation.isPending ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              '🗑️'
+                            )}
+                            Delete
                           </Button>
                           <Button
                             variant="outline"
@@ -481,9 +569,9 @@ export default function AdvancesPage() {
                 <Label required>Employee</Label>
                 <select
                   value={newAdvance.employeeId}
-                  onChange={(e) => setNewAdvance(prev => ({ 
-                    ...prev, 
-                    employeeId: e.target.value 
+                  onChange={(e) => setNewAdvance(prev => ({
+                    ...prev,
+                    employeeId: e.target.value
                   }))}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 >
@@ -502,9 +590,9 @@ export default function AdvancesPage() {
                   type="number"
                   placeholder="5000"
                   value={newAdvance.amount}
-                  onChange={(e) => setNewAdvance(prev => ({ 
-                    ...prev, 
-                    amount: e.target.value 
+                  onChange={(e) => setNewAdvance(prev => ({
+                    ...prev,
+                    amount: e.target.value
                   }))}
                   icon={<DollarSign className="h-4 w-4" />}
                 />
@@ -527,9 +615,9 @@ export default function AdvancesPage() {
                 <textarea
                   placeholder="Reason for advance..."
                   value={newAdvance.reason}
-                  onChange={(e) => setNewAdvance(prev => ({ 
-                    ...prev, 
-                    reason: e.target.value 
+                  onChange={(e) => setNewAdvance(prev => ({
+                    ...prev,
+                    reason: e.target.value
                   }))}
                   className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 />
@@ -586,8 +674,8 @@ export default function AdvancesPage() {
                 <Button
                   onClick={() => createMutation.mutate()}
                   disabled={
-                    createMutation.isPending || 
-                    !newAdvance.employeeId || 
+                    createMutation.isPending ||
+                    !newAdvance.employeeId ||
                     !newAdvance.amount
                   }
                   className="gap-2"
@@ -598,6 +686,104 @@ export default function AdvancesPage() {
                     <Plus className="h-4 w-4" />
                   )}
                   Create Advance
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && editingAdvanceId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <Card className="w-full max-w-md bg-card">
+            <CardHeader>
+              <CardTitle>Edit Advance Request</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label required>Amount (LKR)</Label>
+                <Input
+                  type="number"
+                  placeholder="5000"
+                  value={newAdvance.amount}
+                  onChange={(e) => setNewAdvance(prev => ({
+                    ...prev,
+                    amount: e.target.value
+                  }))}
+                  icon={<DollarSign className="h-4 w-4" />}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Reason</Label>
+                <textarea
+                  placeholder="Reason for advance..."
+                  value={newAdvance.reason}
+                  onChange={(e) => setNewAdvance(prev => ({
+                    ...prev,
+                    reason: e.target.value
+                  }))}
+                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="space-y-3 rounded-lg border border-border p-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newAdvance.deductThisWeek}
+                    onChange={(e) => setNewAdvance(prev => ({
+                      ...prev,
+                      deductThisWeek: e.target.checked,
+                    }))}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                  />
+                  <span className="text-sm font-medium">Deduct This Week</span>
+                </label>
+                {!newAdvance.deductThisWeek && (
+                  <div className="space-y-1 ml-6">
+                    <Label>Deduction Week (optional)</Label>
+                    <Input
+                      type="date"
+                      value={newAdvance.deductionWeek}
+                      onChange={(e) => setNewAdvance(prev => ({
+                        ...prev,
+                        deductionWeek: e.target.value,
+                      }))}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setEditingAdvanceId(null);
+                    setNewAdvance({ employeeId: '', amount: '', reason: '', date: new Date().toISOString().split('T')[0], deductThisWeek: true, deductionWeek: '' });
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => editMutation.mutate({
+                    id: editingAdvanceId,
+                    amount: parseFloat(newAdvance.amount),
+                    reason: newAdvance.reason,
+                    deductThisWeek: newAdvance.deductThisWeek,
+                    deductionWeek: newAdvance.deductThisWeek ? undefined : newAdvance.deductionWeek || undefined,
+                  })}
+                  disabled={editMutation.isPending || !newAdvance.amount}
+                  className="gap-2"
+                >
+                  {editMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    '✏️'
+                  )}
+                  Save Changes
                 </Button>
               </div>
             </CardContent>

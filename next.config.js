@@ -28,7 +28,7 @@ const nextConfig = {
   
   // Environment variables that should be available on the client
   env: {
-    NEXT_PUBLIC_APP_NAME: 'Employee Management System',
+    NEXT_PUBLIC_APP_NAME: 'KK & SONS Architectural Services EMS',
     NEXT_PUBLIC_APP_VERSION: '1.0.0',
   },
   

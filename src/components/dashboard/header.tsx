@@ -109,7 +109,7 @@ export function Header({ user, onMenuClick, sidebarCollapsed }: HeaderProps) {
         <Button
           variant="ghost"
           size="icon-sm"
-          className="lg:hidden"
+          className="md:hidden"
           onClick={onMenuClick}
         >
           <Menu className="h-5 w-5" />
@@ -164,7 +164,7 @@ export function Header({ user, onMenuClick, sidebarCollapsed }: HeaderProps) {
           </Button>
 
           {showNotifications && (
-            <div className="absolute right-0 top-full mt-2 z-50 w-80 rounded-lg border border-border bg-popover shadow-lg">
+            <div className="absolute right-0 top-full mt-2 z-50 w-full sm:w-80 left-4 right-4 sm:left-auto sm:right-0 rounded-lg border border-border bg-popover shadow-lg">
               <div className="flex items-center justify-between border-b border-border px-4 py-3">
                 <h3 className="font-semibold text-sm">Notifications</h3>
                 <Button

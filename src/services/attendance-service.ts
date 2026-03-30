@@ -17,7 +17,7 @@ import {
   generateDocId,
   serverTimestamp,
 } from '@/lib/firebase/firestore';
-import { writeBatch, doc, collection } from 'firebase/firestore';
+import { writeBatch, doc, collection, deleteField } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { uploadAttendancePhoto } from '@/lib/firebase/storage';
 import { COLLECTIONS, ATTENDANCE_CONFIG } from '@/constants';
@@ -552,12 +552,17 @@ export async function markSimpleAttendance(
  * Bulk mark attendance for multiple workers (supervisor workflow).
  * Uses Firestore writeBatch for performance — single round-trip.
  * Only writes changed records to minimise Firestore operations.
+ *
+ * Role-aware:
+ * - Supervisor: merges site visits (preserves other sites)
+ * - Labor: updates morning/evening shifts
  */
 export async function bulkMarkSimpleAttendance(
   date: string,
   siteId: string,
   entries: BulkAttendanceEntry[],
-  supervisorId: string
+  supervisorId: string,
+  workerRoles?: Record<string, string> // REQUIRED: current role from employees
 ): Promise<{ success: number; failed: number }> {
   // 1. Pre-fetch ALL existing records for this date in one query
   const existingRecords = await getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
@@ -576,29 +581,72 @@ export async function bulkMarkSimpleAttendance(
 
       const morningSite = entry.morning ? siteId : (existing?.morningSite ?? null);
       const eveningSite = entry.evening ? siteId : (existing?.eveningSite ?? null);
-      const otHours = entry.otHours;
+
+      // Build siteOtHours mapping - track OT per site
+      let siteOtHours = { ...(existing?.siteOtHours || {}) };
+      if (entry.otHours > 0) {
+        siteOtHours[siteId] = entry.otHours;
+      } else if (entry.otHours === 0 && (entry.morning || entry.evening)) {
+        // Only clear OT for this site if explicitly marked with 0 OT
+        // (not if just unmarking attendance)
+        siteOtHours[siteId] = 0;
+      }
+      // Calculate total otHours from all sites
+      const otHours = Object.values(siteOtHours).reduce((sum, h) => sum + (Number(h) || 0), 0);
 
       // Skip if nothing changed
       if (
         existing &&
         existing.morningSite === morningSite &&
         existing.eveningSite === eveningSite &&
-        existing.otHours === otHours
+        existing.otHours === otHours &&
+        JSON.stringify(existing.siteOtHours) === JSON.stringify(siteOtHours)
       ) {
         success++;
         continue;
       }
 
       if (existing) {
-        // Update existing doc
+        // Update existing doc - ALWAYS include morning/evening to ensure unmarks are saved
         const docRef = doc(db, SIMPLE_ATTENDANCE_COLLECTION, existing.id);
-        batch.update(docRef, {
-          morningSite,
-          eveningSite,
+
+        // Calculate what the values should be
+        let updateMorningSite: string | null;
+        let updateEveningSite: string | null;
+
+        if (entry.morning) {
+          // Marking morning at thissite
+          updateMorningSite = siteId;
+        } else if (!entry.morning && existing.morningSite === siteId) {
+          // Unchecking morning at this site - MUST set to null
+          updateMorningSite = null;
+        } else {
+          // Not touching morning - preserve existing
+          updateMorningSite = existing.morningSite || null;
+        }
+
+        if (entry.evening) {
+          // Marking evening at this site
+          updateEveningSite = siteId;
+        } else if (!entry.evening && existing.eveningSite === siteId) {
+          // Unchecking evening at this site - MUST set to null
+          updateEveningSite = null;
+        } else {
+          // Not touching evening - preserve existing
+          updateEveningSite = existing.eveningSite || null;
+        }
+
+        const updateData: any = {
+          // Use deleteField() to actually remove fields from Firestore on unmark
+          morningSite: updateMorningSite === null ? deleteField() : updateMorningSite,
+          eveningSite: updateEveningSite === null ? deleteField() : updateEveningSite,
+          siteOtHours: Object.keys(siteOtHours).length > 0 ? siteOtHours : deleteField(),
           otHours,
           supervisorId,
           updatedAt: serverTimestamp(),
-        });
+        };
+
+        batch.update(docRef, updateData);
       } else {
         // Create new doc
         const newDocRef = doc(collection(db, SIMPLE_ATTENDANCE_COLLECTION));
@@ -608,6 +656,7 @@ export async function bulkMarkSimpleAttendance(
           workerName: entry.workerName,
           morningSite,
           eveningSite,
+          siteOtHours: Object.keys(siteOtHours).length > 0 ? siteOtHours : undefined,
           otHours,
           supervisorId,
           createdAt: serverTimestamp(),

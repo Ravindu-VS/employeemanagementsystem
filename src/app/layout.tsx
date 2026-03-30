@@ -14,11 +14,11 @@ const inter = Inter({
 // Metadata configuration
 export const metadata: Metadata = {
   title: {
-    default: "Employee Management System - Admin",
-    template: "%s | Employee Management System",
+    default: "KK & SONS Architectural Services EMS - Admin",
+    template: "%s | KK & SONS Architectural Services EMS",
   },
   description:
-    "Admin dashboard for managing employee attendance, payroll, and workforce operations.",
+    "Construction and workforce management platform for KK & SONS Architectural Services",
   keywords: [
     "employee management",
     "attendance tracking",
@@ -26,9 +26,9 @@ export const metadata: Metadata = {
     "workforce management",
     "construction management",
   ],
-  authors: [{ name: "Your Company Name" }],
-  creator: "Your Company Name",
-  publisher: "Your Company Name",
+  authors: [{ name: "KK & SONS Architectural Services" }],
+  creator: "KK & SONS Architectural Services",
+  publisher: "KK & SONS Architectural Services",
   robots: {
     index: false, // Admin dashboard should not be indexed
     follow: false,

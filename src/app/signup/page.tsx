@@ -245,7 +245,7 @@ export default function SignupPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold">EMS Admin</h1>
-              <p className="text-sm text-muted-foreground">Employee Management System</p>
+              <p className="text-sm text-muted-foreground">KK & SONS Architectural Services EMS</p>
             </div>
           </div>
         </div>

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
+import { SidebarDrawer } from "@/components/dashboard/sidebar-drawer";
 import { Header } from "@/components/dashboard/header";
 import { useAuth, useRequireAuth } from "@/components/providers/auth-provider";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { isLoading } = useRequireAuth();
   const { profile } = useAuth();
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
   const pathname = usePathname();
 
   // Show loading state while checking auth
@@ -42,30 +44,41 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      {/* Sidebar */}
-      <Sidebar 
-        collapsed={sidebarCollapsed} 
+      {/* Mobile drawer (hidden on md+) */}
+      <SidebarDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        collapsed={sidebarCollapsed}
         onCollapsedChange={setSidebarCollapsed}
         userRole={profile.role}
       />
 
+      {/* Desktop sidebar (hidden on mobile, visible on md+) */}
+      <div className="hidden md:block">
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          onCollapsedChange={setSidebarCollapsed}
+          userRole={profile.role}
+        />
+      </div>
+
       {/* Main content area */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <Header 
+        <Header
           user={profile}
-          onMenuClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          onMenuClick={() => setDrawerOpen(true)}
           sidebarCollapsed={sidebarCollapsed}
         />
 
         {/* Page content */}
-        <main 
+        <main
           className={cn(
             "flex-1 overflow-auto",
             "bg-muted/30"
           )}
         >
-          <div className="container mx-auto p-6">
+          <div className="container mx-auto p-4 sm:p-6">
             {children}
           </div>
         </main>
