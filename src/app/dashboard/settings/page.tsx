@@ -90,7 +90,7 @@ function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (
     >
       <span
         className={cn(
-          'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform',
+          'pointer-events-none inline-block h-4 w-4 sm:h-5 sm:w-5 rounded-full bg-white shadow-lg ring-0 transition-transform',
           checked ? 'translate-x-5' : 'translate-x-0'
         )}
       />
@@ -254,10 +254,10 @@ export default function SettingsPage() {
   const showSaveButton = activeTab !== 'security';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Settings</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-foreground">Settings</h1>
         <p className="text-muted-foreground">
           Manage your account and application settings
         </p>
@@ -291,7 +291,7 @@ export default function SettingsPage() {
         </Card>
 
         {/* Content */}
-        <div className="flex-1 space-y-6">
+        <div className="flex-1 space-y-4 sm:space-y-6">
 
           {/* Loading state for settings tabs */}
           {settingsLoading && activeTab !== 'profile' && activeTab !== 'appearance' && activeTab !== 'security' && (
@@ -307,7 +307,7 @@ export default function SettingsPage() {
           {settingsError && activeTab !== 'profile' && activeTab !== 'appearance' && activeTab !== 'security' && (
             <Card className="bg-card/50 border-destructive">
               <CardContent className="flex items-center gap-3 py-6">
-                <AlertCircle className="h-5 w-5 text-destructive" />
+                <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 text-destructive" />
                 <div>
                   <p className="font-medium text-destructive">Failed to load settings</p>
                   <p className="text-sm text-muted-foreground">Using default values. Changes will still be saved.</p>
@@ -324,7 +324,7 @@ export default function SettingsPage() {
                 <CardDescription>Update your personal information</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3 sm:p-4">
                   <div className="relative">
                     {photoPreview ? (
                       <img src={photoPreview} alt="Profile" className="h-20 w-20 rounded-full object-cover" />
@@ -415,7 +415,7 @@ export default function SettingsPage() {
                 <CardTitle>Payroll Configuration</CardTitle>
                 <CardDescription>Configure salary and payment settings</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-4 sm:space-y-6">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Payroll Cycle</Label>
@@ -499,7 +499,7 @@ export default function SettingsPage() {
                 <CardTitle>Attendance Configuration</CardTitle>
                 <CardDescription>Configure attendance tracking settings</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-4 sm:space-y-6">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Auto-Close After (hours)</Label>
@@ -641,7 +641,7 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-4">
-                  <div className="rounded-lg border border-border p-4">
+                  <div className="rounded-lg border border-border p-3 sm:p-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium">Change Password</p>
@@ -650,7 +650,7 @@ export default function SettingsPage() {
                       <Button variant="outline">Change</Button>
                     </div>
                   </div>
-                  <div className="rounded-lg border border-border p-4">
+                  <div className="rounded-lg border border-border p-3 sm:p-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium">Two-Factor Authentication</p>
@@ -659,7 +659,7 @@ export default function SettingsPage() {
                       <Button variant="outline">Enable</Button>
                     </div>
                   </div>
-                  <div className="rounded-lg border border-border p-4">
+                  <div className="rounded-lg border border-border p-3 sm:p-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium">Active Sessions</p>

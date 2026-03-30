@@ -268,11 +268,11 @@ export default function AdvancesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Salary Advances</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Salary Advances</h1>
           <p className="text-muted-foreground">
             Manage employee advance requests
           </p>
@@ -284,35 +284,35 @@ export default function AdvancesPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-4">
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-yellow-500/20 p-2">
                 <Clock className="h-5 w-5 text-yellow-400" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Pending</p>
-                <p className="text-2xl font-bold">{pendingCount}</p>
+                <p className="text-xl sm:text-2xl font-bold">{pendingCount}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-green-500/20 p-2">
                 <CheckCircle className="h-5 w-5 text-green-400" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Approved</p>
-                <p className="text-2xl font-bold">{approvedCount}</p>
+                <p className="text-xl sm:text-2xl font-bold">{approvedCount}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-orange-500/20 p-2">
                 <DollarSign className="h-5 w-5 text-orange-400" />
@@ -325,7 +325,7 @@ export default function AdvancesPage() {
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-blue-500/20 p-2">
                 <Wallet className="h-5 w-5 text-blue-400" />
@@ -341,8 +341,8 @@ export default function AdvancesPage() {
 
       {/* Search and Filters */}
       <Card className="bg-card/50">
-        <CardContent className="p-4">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -408,7 +408,7 @@ export default function AdvancesPage() {
                   className="p-4 transition-colors hover:bg-muted/30"
                 >
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3 sm:p-4">
                       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/20 font-medium text-primary">
                         {advance.employeeName.charAt(0).toUpperCase()}
                       </div>
@@ -428,7 +428,7 @@ export default function AdvancesPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3 sm:p-4">
                       <div className="text-right">
                         <p className="text-lg font-bold text-green-400">
                           {formatCurrency(advance.amount)}

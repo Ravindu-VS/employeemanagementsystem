@@ -20,13 +20,13 @@ import { Building2, Mail, Lock, User, Phone, Loader2, ArrowLeft, ShieldCheck, Br
 
 // Role icons mapping
 const roleIcons: Record<string, React.ReactNode> = {
-  owner: <ShieldCheck className="h-5 w-5" />,
-  ceo: <Briefcase className="h-5 w-5" />,
-  manager: <Users className="h-5 w-5" />,
-  supervisor: <MapPin className="h-5 w-5" />,
-  draughtsman: <Briefcase className="h-5 w-5" />,
-  bass: <Users className="h-5 w-5" />,
-  helper: <Users className="h-5 w-5" />,
+  owner: <ShieldCheck className="h-4 w-4 sm:h-5 sm:w-5" />,
+  ceo: <Briefcase className="h-4 w-4 sm:h-5 sm:w-5" />,
+  manager: <Users className="h-4 w-4 sm:h-5 sm:w-5" />,
+  supervisor: <MapPin className="h-4 w-4 sm:h-5 sm:w-5" />,
+  draughtsman: <Briefcase className="h-4 w-4 sm:h-5 sm:w-5" />,
+  bass: <Users className="h-4 w-4 sm:h-5 sm:w-5" />,
+  helper: <Users className="h-4 w-4 sm:h-5 sm:w-5" />,
 };
 
 // Role descriptions
@@ -235,7 +235,7 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+    <div className="min-h-screen flex items-center justify-center bg-background p-3 sm:p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex items-center justify-center mb-8">
@@ -244,7 +244,7 @@ export default function SignupPage() {
               <Building2 className="h-8 w-8 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold">EMS Admin</h1>
+              <h1 className="text-xl sm:text-2xl font-bold">EMS Admin</h1>
               <p className="text-sm text-muted-foreground">KK & SONS Architectural Services EMS</p>
             </div>
           </div>
@@ -450,7 +450,7 @@ export default function SignupPage() {
                                 p-2 rounded-full
                                 ${isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted'}
                               `}>
-                                {roleIcons[role.value] || <User className="h-5 w-5" />}
+                                {roleIcons[role.value] || <User className="h-4 w-4 sm:h-5 sm:w-5" />}
                               </div>
                               <div className="flex-1">
                                 <p className="font-medium">{role.label}</p>
@@ -475,7 +475,7 @@ export default function SignupPage() {
                     <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
                       <div className="flex items-center gap-3">
                         <div className="p-2 bg-primary rounded-full">
-                          <ShieldCheck className="h-5 w-5 text-primary-foreground" />
+                          <ShieldCheck className="h-4 w-4 sm:h-5 sm:w-5 text-primary-foreground" />
                         </div>
                         <div>
                           <p className="font-medium text-primary">Owner Account</p>

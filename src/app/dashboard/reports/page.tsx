@@ -155,11 +155,11 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Reports</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Reports</h1>
           <p className="text-muted-foreground">
             Generate and view various reports
           </p>
@@ -167,55 +167,55 @@ export default function ReportsPage() {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-4">
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-blue-500/20 p-2">
                 <Users className="h-5 w-5 text-blue-400" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Active Employees</p>
-                <p className="text-2xl font-bold">{activeEmployees}</p>
+                <p className="text-xl sm:text-2xl font-bold">{activeEmployees}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-green-500/20 p-2">
                 <Building2 className="h-5 w-5 text-green-400" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Active Sites</p>
-                <p className="text-2xl font-bold">{sites.length}</p>
+                <p className="text-xl sm:text-2xl font-bold">{sites.length}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-purple-500/20 p-2">
                 <Calendar className="h-5 w-5 text-purple-400" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Current Week</p>
-                <p className="text-2xl font-bold">Week {weekNumber}</p>
+                <p className="text-xl sm:text-2xl font-bold">Week {weekNumber}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-orange-500/20 p-2">
                 <FileText className="h-5 w-5 text-orange-400" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Attendance Records</p>
-                <p className="text-2xl font-bold">{attendance.length}</p>
+                <p className="text-xl sm:text-2xl font-bold">{attendance.length}</p>
               </div>
             </div>
           </CardContent>
@@ -224,8 +224,8 @@ export default function ReportsPage() {
 
       {/* Date Range Selector */}
       <Card className="bg-card/50">
-        <CardContent className="p-4">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between md:justify-between">
             <div className="flex items-center gap-2">
               <Calendar className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium">Date Range:</span>
@@ -511,17 +511,17 @@ function AttendanceSummaryReport({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-3 sm:p-4">
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-blue-500">{attendance.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-blue-500">{attendance.length}</p>
           <p className="text-sm text-muted-foreground">Total Records</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-green-500">{employeeAttendance.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-green-500">{employeeAttendance.length}</p>
           <p className="text-sm text-muted-foreground">Employees Tracked</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-orange-500">
+          <p className="text-xl sm:text-2xl font-bold text-orange-500">
             {employeeAttendance.reduce((sum, e) => sum + e.otHours, 0).toFixed(1)}
           </p>
           <p className="text-sm text-muted-foreground">Total OT Hours</p>
@@ -669,7 +669,7 @@ function PayrollSummaryReport({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Worker Payroll Breakdown */}
       <div>
         <h3 className="mb-3 font-semibold text-foreground">Worker Payroll Report</h3>
@@ -752,17 +752,17 @@ function EmployeeReport({ employees }: { employees: UserProfile[] }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-3 sm:p-4">
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-blue-500">{employees.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-blue-500">{employees.length}</p>
           <p className="text-sm text-muted-foreground">Total Employees</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-green-500">{activeEmployees.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-green-500">{activeEmployees.length}</p>
           <p className="text-sm text-muted-foreground">Active</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-red-500">{inactiveEmployees.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-red-500">{inactiveEmployees.length}</p>
           <p className="text-sm text-muted-foreground">Inactive</p>
         </div>
       </div>
@@ -957,17 +957,17 @@ function OvertimeReport({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-3 sm:p-4">
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-orange-500">{totalOTHours.toFixed(1)}</p>
+          <p className="text-xl sm:text-2xl font-bold text-orange-500">{totalOTHours.toFixed(1)}</p>
           <p className="text-sm text-muted-foreground">Total OT Hours</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-green-500">{formatCurrency(totalOTPay)}</p>
+          <p className="text-xl sm:text-2xl font-bold text-green-500">{formatCurrency(totalOTPay)}</p>
           <p className="text-sm text-muted-foreground">Total OT Pay</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-blue-500">{overtimeData.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-blue-500">{overtimeData.length}</p>
           <p className="text-sm text-muted-foreground">Employees with OT</p>
         </div>
       </div>
@@ -1026,21 +1026,21 @@ function FinancialSummaryReport({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-4">
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-yellow-500">{pendingAdvances.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-yellow-500">{pendingAdvances.length}</p>
           <p className="text-sm text-muted-foreground">Pending Advances</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-orange-500">{formatCurrency(totalPendingAdvances)}</p>
+          <p className="text-xl sm:text-2xl font-bold text-orange-500">{formatCurrency(totalPendingAdvances)}</p>
           <p className="text-sm text-muted-foreground">Advance Amount</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-blue-500">{activeLoans.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-blue-500">{activeLoans.length}</p>
           <p className="text-sm text-muted-foreground">Active Loans</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-red-500">{formatCurrency(totalActiveLoanBalance)}</p>
+          <p className="text-xl sm:text-2xl font-bold text-red-500">{formatCurrency(totalActiveLoanBalance)}</p>
           <p className="text-sm text-muted-foreground">Outstanding Loan Balance</p>
         </div>
       </div>
