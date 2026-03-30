@@ -578,27 +578,57 @@ export async function bulkMarkSimpleAttendance(
   for (const entry of entries) {
     try {
       const existing = existingMap.get(entry.workerId);
+      const workerRole = workerRoles?.[entry.workerId];
 
-      const morningSite = entry.morning ? siteId : (existing?.morningSite ?? null);
-      const eveningSite = entry.evening ? siteId : (existing?.eveningSite ?? null);
+      // =====================================================
+      // CRITICAL FIX: Explicit absence clearing
+      // When unchecking a shift at current site, MUST set to null (not preserve old value)
+      // =====================================================
+
+      let updateMorningSite: string | null;
+      let updateEveningSite: string | null;
+
+      if (entry.morning) {
+        // Marking morning at this site
+        updateMorningSite = siteId;
+      } else {
+        // Unchecking morning - check if it was marked at THIS site
+        updateMorningSite = (!entry.morning && existing?.morningSite === siteId) ? null : (existing?.morningSite || null);
+      }
+
+      if (entry.evening) {
+        // Marking evening at this site
+        updateEveningSite = siteId;
+      } else {
+        // Unchecking evening - check if it was marked at THIS site
+        updateEveningSite = (!entry.evening && existing?.eveningSite === siteId) ? null : (existing?.eveningSite || null);
+      }
 
       // Build siteOtHours mapping - track OT per site
       let siteOtHours = { ...(existing?.siteOtHours || {}) };
+
       if (entry.otHours > 0) {
+        // Update OT for this site
         siteOtHours[siteId] = entry.otHours;
-      } else if (entry.otHours === 0 && (entry.morning || entry.evening)) {
-        // Only clear OT for this site if explicitly marked with 0 OT
-        // (not if just unmarking attendance)
-        siteOtHours[siteId] = 0;
+      } else if (entry.otHours === 0) {
+        // Only clear OT for this site if we're clearing both morning AND evening at this site
+        if (updateMorningSite === null && updateEveningSite === null && (existing?.morningSite === siteId || existing?.eveningSite === siteId)) {
+          delete siteOtHours[siteId];
+        }
       }
+
       // Calculate total otHours from all sites
       const otHours = Object.values(siteOtHours).reduce((sum, h) => sum + (Number(h) || 0), 0);
+
+      // =====================================================
+      // FIXED: Skip detection must use the CORRECTED site values
+      // =====================================================
 
       // Skip if nothing changed
       if (
         existing &&
-        existing.morningSite === morningSite &&
-        existing.eveningSite === eveningSite &&
+        existing.morningSite === updateMorningSite &&
+        existing.eveningSite === updateEveningSite &&
         existing.otHours === otHours &&
         JSON.stringify(existing.siteOtHours) === JSON.stringify(siteOtHours)
       ) {
@@ -607,34 +637,8 @@ export async function bulkMarkSimpleAttendance(
       }
 
       if (existing) {
-        // Update existing doc - ALWAYS include morning/evening to ensure unmarks are saved
+        // Update existing doc
         const docRef = doc(db, SIMPLE_ATTENDANCE_COLLECTION, existing.id);
-
-        // Calculate what the values should be
-        let updateMorningSite: string | null;
-        let updateEveningSite: string | null;
-
-        if (entry.morning) {
-          // Marking morning at thissite
-          updateMorningSite = siteId;
-        } else if (!entry.morning && existing.morningSite === siteId) {
-          // Unchecking morning at this site - MUST set to null
-          updateMorningSite = null;
-        } else {
-          // Not touching morning - preserve existing
-          updateMorningSite = existing.morningSite || null;
-        }
-
-        if (entry.evening) {
-          // Marking evening at this site
-          updateEveningSite = siteId;
-        } else if (!entry.evening && existing.eveningSite === siteId) {
-          // Unchecking evening at this site - MUST set to null
-          updateEveningSite = null;
-        } else {
-          // Not touching evening - preserve existing
-          updateEveningSite = existing.eveningSite || null;
-        }
 
         const updateData: any = {
           // Use deleteField() to actually remove fields from Firestore on unmark
@@ -646,6 +650,23 @@ export async function bulkMarkSimpleAttendance(
           updatedAt: serverTimestamp(),
         };
 
+        console.debug('[ATTENDANCE SAVE - UPDATE]', {
+          workerId: entry.workerId,
+          date,
+          siteId,
+          before: {
+            morningSite: existing.morningSite,
+            eveningSite: existing.eveningSite,
+            otHours: existing.otHours,
+          },
+          after: {
+            morningSite: updateMorningSite,
+            eveningSite: updateEveningSite,
+            otHours,
+          },
+          action: (updateMorningSite === null || updateEveningSite === null) ? 'clear-absence' : 'update-presence',
+        });
+
         batch.update(docRef, updateData);
       } else {
         // Create new doc
@@ -654,17 +675,32 @@ export async function bulkMarkSimpleAttendance(
           date,
           workerId: entry.workerId,
           workerName: entry.workerName,
-          morningSite,
-          eveningSite,
+          role: workerRole || 'helper', // Store role for future reference
+          morningSite: updateMorningSite || undefined,
+          eveningSite: updateEveningSite || undefined,
           siteOtHours: Object.keys(siteOtHours).length > 0 ? siteOtHours : undefined,
           otHours,
           supervisorId,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
+
+        console.debug('[ATTENDANCE SAVE - CREATE]', {
+          workerId: entry.workerId,
+          date,
+          siteId,
+          morning: updateMorningSite,
+          evening: updateEveningSite,
+          otHours,
+        });
       }
       success++;
-    } catch {
+    } catch (err) {
+      console.error('[ATTENDANCE SAVE ERROR]', {
+        workerId: entry.workerId,
+        message: err instanceof Error ? err.message : String(err),
+        error: err,
+      });
       failed++;
     }
   }

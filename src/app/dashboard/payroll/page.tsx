@@ -282,10 +282,12 @@ export default function PayrollPage() {
   // ---- FILTER ----
 
   const filteredSummaries = employeeSummaries.filter(s =>
-    !searchQuery || s.employeeName.toLowerCase().includes(searchQuery.toLowerCase())
+    (!searchQuery || s.employeeName.toLowerCase().includes(searchQuery.toLowerCase())) &&
+    s.grossPay > 0  // Hide workers with zero payment
   );
   const filteredPayroll = payrollRecords.filter(r =>
-    !searchQuery || r.employeeName.toLowerCase().includes(searchQuery.toLowerCase())
+    (!searchQuery || r.employeeName.toLowerCase().includes(searchQuery.toLowerCase())) &&
+    r.netPay > 0  // Hide workers with zero payment
   );
 
   // ---- MUTATIONS ----

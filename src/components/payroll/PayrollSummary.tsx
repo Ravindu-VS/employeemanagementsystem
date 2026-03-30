@@ -117,7 +117,7 @@ export function PayrollSummary({
                           <Building2 className="h-4 w-4 text-primary" />
                           <span className="font-semibold text-foreground">{site.siteName}</span>
                           <span className="text-xs text-muted-foreground ml-1">
-                            ({site.workers.length} {site.workers.length === 1 ? 'worker' : 'workers'})
+                            ({site.workers.filter(w => w.totalSalary > 0).length} {site.workers.filter(w => w.totalSalary > 0).length === 1 ? 'worker' : 'workers'})
                           </span>
                         </div>
                         <div className="flex items-center gap-3">
@@ -132,10 +132,12 @@ export function PayrollSummary({
                         </div>
                       </button>
 
-                      {/* Expandable Workers section */}
+                      {/* Expandable Workers section - filter out zero payment workers */}
                       {isExpanded && site.workers.length > 0 && (
                         <div className="divide-y divide-border/30">
-                          {site.workers.map((worker) => (
+                          {site.workers
+                            .filter((worker) => worker.totalSalary > 0)
+                            .map((worker) => (
                             <div key={worker.workerId} className="px-3 py-2.5 text-sm hover:bg-muted/5">
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex-1 flex items-center gap-2">
