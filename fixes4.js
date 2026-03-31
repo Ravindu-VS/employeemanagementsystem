@@ -1,1 +1,0 @@
-﻿const fs = require("fs"); let p = "src/app/dashboard/reports/page.tsx"; let r = fs.readFileSync(p, "utf8"); r = r.replace(/buildWorkerWeeklyPayrolls,\r?\n\s*buildFinalPayrollSummary,/g, "calculatePayrollBreakdown"); fs.writeFileSync(p, r); console.log("done regex window");

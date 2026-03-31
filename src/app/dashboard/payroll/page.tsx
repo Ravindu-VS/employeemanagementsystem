@@ -207,6 +207,46 @@ export default function PayrollPage() {
     queryFn: getAllPendingAdvances,
   });
 
+  // Auto-check all un-deducted advances for deduction
+  useEffect(() => {
+    if (!isLoaded || pendingAdvances.length === 0) return;
+
+    // Check if current selections state is truly empty (no advances checked)
+    const selectedAdvances = Object.values(deductionSelections).filter(Boolean).length;
+
+    if (selectedAdvances === 0) {
+      const autoSelections: Record<string, boolean> = {};
+      pendingAdvances.forEach(adv => {
+        // Auto-check only approved, un-deducted advances
+        if (!adv.deducted && adv.status === 'approved') {
+          autoSelections[adv.id] = true;
+          console.log(`✅ [AUTO-CHECK] ${adv.id}: ${adv.amount} LKR (status=${adv.status})`);
+        }
+      });
+
+      if (Object.keys(autoSelections).length > 0) {
+        console.log(`📊 [AUTO-SELECTIONS] Found ${Object.keys(autoSelections).length} un-deducted advances - auto-checking them`);
+        setDeductionSelections(autoSelections);
+      }
+    } else {
+      console.log(`📝 [AUTO-SELECTIONS SKIPPED] ${selectedAdvances} advances already selected`);
+    }
+  }, [pendingAdvances, isLoaded, deductionSelections]);
+
+  // Debug: log fetched advances
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      console.log(`📊 [PAYROLL DEBUG] Fetched advances: count=${pendingAdvances.length}`);
+      if (pendingAdvances.length > 0) {
+        pendingAdvances.forEach(a => {
+          console.log(`   → ${a.id}: emp=${a.employeeId}, amt=${a.amount}, status=${a.status}, deducted=${a.deducted}`);
+        });
+      } else {
+        console.log('   ❌ NO ADVANCES FOUND IN DATABASE');
+      }
+    }
+  }, [pendingAdvances]);
+
   const hasPayrollGenerated = payrollRecords.length > 0;
 
   // ---- BUILD MAPS ----
@@ -227,7 +267,20 @@ export default function PayrollPage() {
   }, [sites]);
 
   // Group advances by employeeId
-  const advancesByEmployee = useMemo(() => groupAdvancesByEmployee(pendingAdvances), [pendingAdvances]);
+  const advancesByEmployee = useMemo(() => {
+    const grouped = groupAdvancesByEmployee(pendingAdvances);
+    if (typeof window !== 'undefined' && grouped.size > 0) {
+      console.log('📊 [PAYROLL DEBUG] Advances grouped by employee:', {
+        mapSize: grouped.size,
+        entries: Array.from(grouped.entries()).map(([empId, advs]) => ({
+          employeeId: empId,
+          count: advs.length,
+          advances: advs.map(a => ({ id: a.id, amount: a.amount })),
+        })),
+      });
+    }
+    return grouped;
+  }, [pendingAdvances]);
 
   // ---- TOGGLE EXPAND ----
 
@@ -253,7 +306,20 @@ export default function PayrollPage() {
 
   const employeeSummaries = useMemo((): EmployeeWeekSummary[] => {
     const entries = buildAttendanceEntries(weekAttendance, employeeMap);
-    return buildEmployeeSummaries(entries, employeeMap, siteNameMap, advancesByEmployee) as unknown as EmployeeWeekSummary[];
+    const summaries = buildEmployeeSummaries(entries, employeeMap, siteNameMap, advancesByEmployee) as unknown as EmployeeWeekSummary[];
+
+    // DEBUG: Check what advances made it into summaries
+    if (typeof window !== 'undefined') {
+      const totalAdv = summaries.reduce((sum, e) => sum + e.advances.length, 0);
+      console.log(`📊 [EMPLOYEE SUMMARIES] Built ${summaries.length} summaries, total advances: ${totalAdv}`);
+      summaries.forEach(s => {
+        if (s.advances.length > 0) {
+          console.log(`   → ${s.employeeName}: ${s.advances.length} advances = ${s.advances.reduce((sum, a) => sum + a.amount, 0)} LKR`);
+        }
+      });
+    }
+
+    return summaries;
   }, [weekAttendance, employeeMap, siteNameMap, advancesByEmployee]);
 
   // ---- SITE TOTALS (using domain engine) ----
@@ -276,6 +342,14 @@ export default function PayrollPage() {
 
   const grandTotals = useMemo(() => {
     const advanceDeductions = calculateSelectedAdvanceDeductions(employeeSummaries, deductionSelections);
+    if (typeof window !== 'undefined') {
+      const empWithAdv = employeeSummaries.filter(e => e.advances.length > 0);
+      const totalAdv = employeeSummaries.reduce((sum, e) => sum + e.advances.length, 0);
+      console.log(`📊 [GRAND TOTALS] employees with advances: ${empWithAdv.length}, total advances: ${totalAdv}, selected deduction: ${advanceDeductions} LKR`);
+      if (totalAdv > 0 && advanceDeductions === 0) {
+        console.log('   ⚠️ Advances exist but selected deduction is 0 - no advances marked for deduction');
+      }
+    }
     return buildGrandTotals(employeeSummaries, advanceDeductions);
   }, [employeeSummaries, deductionSelections]);
 
@@ -297,6 +371,16 @@ export default function PayrollPage() {
       const selectedAdvances = Object.entries(deductionSelections)
         .filter(([_, isSelected]) => isSelected)
         .map(([advanceId, _]) => advanceId);
+
+      // DEBUG: Log selected advances before generating
+      if (typeof window !== 'undefined') {
+        console.log(`🔥 [GENERATE PAYROLL] Selected advances for deduction:`, {
+          count: selectedAdvances.length,
+          ids: selectedAdvances,
+          deductionSelections
+        });
+      }
+
       return generateWeeklyPayroll(weekStart, user?.uid || '', undefined, selectedAdvances);
     },
     onSuccess: (data) => {

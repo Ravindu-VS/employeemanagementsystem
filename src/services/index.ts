@@ -85,7 +85,6 @@ export {
   rejectAdvance,
   cancelAdvance,
   markAdvanceDeducted,
-  getAdvancesForPayrollWeek,
   getAllPendingAdvances,
   getPendingAdvancesByWorkerIds,
   checkDuplicatePendingAdvance,

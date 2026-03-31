@@ -61,28 +61,47 @@ export function WorkerPayrollCard({
   onToggleDeduction,
   showPreview,
 }: WorkerPayrollCardProps) {
+  // DEBUG: Early log before accessing summary.advances
+  if (typeof window !== 'undefined') {
+    console.log(`🔍 [WORKER CARD RENDER START] ${summary.employeeName}, advances exists: ${!!summary.advances}, type: ${typeof summary.advances}`);
+  }
+
+  // Safely handle advances - default to empty array if undefined
+  const advances = summary.advances || [];
+
   // Calculate advance deduction for this worker based on checkbox state
-  const advanceDeduction = summary.advances.reduce(
+  const advanceDeduction = advances.reduce(
     (sum, adv) => sum + (deductionSelections[adv.id] ? adv.amount : 0),
     0
   );
   const finalSalary = summary.grossPay - advanceDeduction;
 
+  // Count advances being deducted
+  const advancesSelected = advances.filter(adv => deductionSelections[adv.id]).length;
+
   return (
-    <div className="transition-colors hover:bg-muted/20">
-      {/* Collapsed header - click to expand */}
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center justify-between gap-2 p-3 sm:p-4 text-left"
-      >
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+    <div className={cn(
+      'transition-colors',
+      advanceDeduction > 0
+        ? 'border-l-4 border-amber-500/50 bg-amber-500/5 hover:bg-amber-500/10'
+        : advances.length > 0
+          ? 'border-l-4 border-red-500/30 hover:bg-muted/20'
+          : 'hover:bg-muted/20'
+    )}>
+      {/* Collapsed summary row */}
+      <div className="flex w-full items-center justify-between gap-2 p-3 sm:p-4 text-left">
+        {/* Left side: name, role, days */}
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1"
+        >
           <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-full bg-primary/20 font-medium text-primary text-xs sm:text-sm">
             {summary.employeeName.charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0 flex-1">
             <p className="font-medium text-xs sm:text-sm truncate">{summary.employeeName}</p>
-            <div className="flex items-center gap-1.5 sm:gap-2 max-w-sm text-xs">
+            <div className="flex items-center gap-1.5 sm:gap-2 max-w-sm text-xs flex-wrap">
               <span className={cn(
                 'inline-flex shrink-0 rounded-full px-1.5 sm:px-2 py-0.5 font-medium',
                 roleBadgeColors[summary.employeeRole]
@@ -97,22 +116,34 @@ export function WorkerPayrollCard({
                   {summary.siteBreakdowns.length} sites
                 </span>
               )}
-              {summary.advances.length > 0 && (
-                <span className="rounded bg-red-500/20 px-1 py-0.5 text-xs text-red-400 whitespace-nowrap">
-                  Advance
+              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                {summary.daysWorked}d{summary.otHours > 0 ? `+${summary.otHours.toFixed(1)}h` : ''}
+              </span>
+              {advances.length > 0 && (
+                <span className={cn(
+                  'inline-flex shrink-0 rounded px-1.5 py-0.5 text-xs font-medium',
+                  advanceDeduction > 0
+                    ? 'bg-red-500/20 text-red-400'
+                    : 'bg-yellow-500/20 text-yellow-400'
+                )}>
+                  {advances.length} Advance{advances.length > 1 ? 's' : ''}
                 </span>
               )}
             </div>
           </div>
-        </div>
+        </button>
 
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        {/* Right side: deduction, final salary, expand button */}
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex items-center gap-2 sm:gap-3 shrink-0"
+        >
           <div className="text-right">
-            <p className="text-xs text-muted-foreground whitespace-nowrap">
-              {summary.daysWorked}d{summary.otHours > 0 ? `+${summary.otHours.toFixed(1)}h` : ''}
-            </p>
             {advanceDeduction > 0 && (
-              <p className="text-xs text-red-400">-{formatCurrency(advanceDeduction)}</p>
+              <p className="text-xs font-bold text-red-500 whitespace-nowrap">
+                -{formatCurrency(advanceDeduction)}
+              </p>
             )}
             <p className="text-sm sm:text-lg font-bold text-green-500 whitespace-nowrap">
               {formatCurrency(finalSalary)}
@@ -123,8 +154,8 @@ export function WorkerPayrollCard({
           ) : (
             <ChevronDown className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground shrink-0" />
           )}
-        </div>
-      </button>
+        </button>
+      </div>
 
       {/* Expanded details */}
       {isExpanded && (
@@ -189,13 +220,13 @@ export function WorkerPayrollCard({
           </div>
 
           {/* Advances section */}
-          {summary.advances.length > 0 && (
+          {advances.length > 0 ? (
             <div className="mt-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                Advances
+                Advances ({advances.length})
               </p>
               <div className="space-y-2">
-                {summary.advances.map((adv) => (
+                {advances.map((adv) => (
                   <div
                     key={adv.id}
                     className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2.5"
@@ -229,7 +260,7 @@ export function WorkerPayrollCard({
                             className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
                           />
                           <span className="text-xs font-medium whitespace-nowrap">
-                            Deduct
+                            Deduct This Week
                           </span>
                         </label>
                       )}
@@ -237,7 +268,19 @@ export function WorkerPayrollCard({
                   </div>
                 ))}
               </div>
+
+              {/* Advance Deduction Total - NEW */}
+              {advanceDeduction > 0 && (
+                <div className="mt-2.5 rounded-lg bg-red-500/5 border border-red-500/20 px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs sm:text-sm font-medium text-red-400">Advance Deduction Total</span>
+                    <span className="text-sm font-bold text-red-400">{formatCurrency(advanceDeduction)}</span>
+                  </div>
+                </div>
+              )}
             </div>
+          ) : (
+            <p className="mt-3 text-xs text-muted-foreground italic">No pending advances</p>
           )}
 
           {/* Final salary - highlighted */}

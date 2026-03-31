@@ -446,6 +446,11 @@ export interface FinalPayrollSummary {
 
 /**
  * Salary advance request
+ *
+ * Business Rules:
+ * - status: "pending" (awaiting approval) → "approved" (eligible) → "rejected" (hidden)
+ * - deducted: false (eligible for payroll) → true (already deducted, hidden from future weeks)
+ * - deductionWeek: which week it was deducted (audit trail)
  */
 export interface AdvanceRequest {
   id: string;
@@ -458,10 +463,8 @@ export interface AdvanceRequest {
   reviewedBy?: string;
   reviewedAt?: Date;
   reviewNotes?: string;
-  deductThisWeek: boolean;      // true = deduct from current payroll
-  deductionWeek?: string;       // YYYY-MM-DD week for future deduction
-  deductionWeekId?: string;     // Week when actually deducted (legacy)
-  isDeducted: boolean;
+  deducted: boolean;           // true = already deducted, hide from future weeks
+  deductionWeek: string | null; // ISO date when deducted (e.g. "2026-03-23")
   createdAt: Date;
   updatedAt: Date;
 }

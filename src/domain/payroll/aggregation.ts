@@ -352,6 +352,13 @@ export function buildEmployeeSummaries(
   siteNameMap: Map<string, string>,
   advancesByEmployee: Map<string, any[]>
 ): EmployeePayrollSummary[] {
+  if (typeof window !== 'undefined') {
+    console.log(`📊 [BUILD SUMMARIES] Advances map ready: size=${advancesByEmployee.size}`);
+    if (advancesByEmployee.size === 0) {
+      console.log('   ⚠️ No advances in map - they may not have been fetched');
+    }
+  }
+
   const workerSiteData = new Map<
     string,
     {
@@ -449,7 +456,15 @@ export function buildEmployeeSummaries(
       }))
       .sort((a, b) => a.siteName.localeCompare(b.siteName));
 
-    const empAdvances = advancesByEmployee.get(emp.uid) || [];
+    // CRITICAL FIX: Try multiple lookups to handle different employeeId formats
+    // Advances may be grouped by uid OR workerId depending on how they were created
+    const empAdvances = advancesByEmployee.get(emp.uid)
+      || advancesByEmployee.get(emp.workerId)
+      || [];
+
+    if (typeof window !== 'undefined' && empAdvances.length > 0) {
+      console.log(`   ✓ ${emp.displayName}: found ${empAdvances.length} advance(s) = ${empAdvances.reduce((sum, a) => sum + a.amount, 0)} LKR`);
+    }
 
     summaries.push({
       employeeId: emp.uid,

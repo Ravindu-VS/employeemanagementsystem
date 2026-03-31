@@ -671,19 +671,29 @@ export async function bulkMarkSimpleAttendance(
       } else {
         // Create new doc
         const newDocRef = doc(collection(db, SIMPLE_ATTENDANCE_COLLECTION));
-        batch.set(newDocRef, {
+        const newData: any = {
           date,
           workerId: entry.workerId,
           workerName: entry.workerName,
-          role: workerRole || 'helper', // Store role for future reference
-          morningSite: updateMorningSite || undefined,
-          eveningSite: updateEveningSite || undefined,
-          siteOtHours: Object.keys(siteOtHours).length > 0 ? siteOtHours : undefined,
+          role: workerRole || 'helper',
           otHours,
           supervisorId,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        });
+        };
+
+        // Only include site fields if they have values (avoid undefined in Firestore)
+        if (updateMorningSite) {
+          newData.morningSite = updateMorningSite;
+        }
+        if (updateEveningSite) {
+          newData.eveningSite = updateEveningSite;
+        }
+        if (Object.keys(siteOtHours).length > 0) {
+          newData.siteOtHours = siteOtHours;
+        }
+
+        batch.set(newDocRef, newData);
 
         console.debug('[ATTENDANCE SAVE - CREATE]', {
           workerId: entry.workerId,

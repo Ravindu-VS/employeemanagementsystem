@@ -33,7 +33,7 @@ import {
 } from '@/services';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { formatCurrency, cn } from '@/lib/utils';
-import { calculateOtHourlyRate } from '@/lib/salary-utils';
+import { calculateOtRate } from '@/domain/payroll';
 import {
   formatDate,
   getWeekNumber,
@@ -607,7 +607,7 @@ function PayrollSummaryReport({
         workerSiteMap[record.workerId] = {
           name: record.workerName,
           dailyRate,
-          otRate: calculateOtHourlyRate(dailyRate),
+          otRate: calculateOtRate(dailyRate),
           sites: {},
         };
       }
@@ -638,7 +638,7 @@ function PayrollSummaryReport({
     const workerData = Object.entries(workerSiteMap).map(([workerId, w]) => {
       const siteBreakdowns = Object.entries(w.sites).map(([siteId, s]) => {
         const pay = s.daysWorked * w.dailyRate + s.otHours * w.otRate;
-        return { siteId, siteName: siteNameMap[siteId] || siteId, ...s, pay };
+        return { siteId, siteName: siteNameMap[siteId] || `Site ${siteId.substring(0, 6)}`, ...s, pay };
       });
       const totalPay = siteBreakdowns.reduce((sum, s) => sum + s.pay, 0);
       return { workerId, name: w.name, siteBreakdowns, totalPay };
@@ -652,7 +652,7 @@ function PayrollSummaryReport({
       });
     });
     const siteAggregates = Object.entries(siteAgg)
-      .map(([siteId, total]) => ({ siteId, siteName: siteNameMap[siteId] || siteId, total }))
+      .map(([siteId, total]) => ({ siteId, siteName: siteNameMap[siteId] || `Site ${siteId.substring(0, 6)}`, total }))
       .sort((a, b) => b.total - a.total);
 
     const grandTotal = workerData.reduce((sum, w) => sum + w.totalPay, 0);
@@ -926,7 +926,7 @@ function OvertimeReport({
           workerOT[record.workerId] = {
             name: record.workerName,
             otHours: 0,
-            otRate: calculateOtHourlyRate(dailyRate),
+            otRate: calculateOtRate(dailyRate),
             days: 0,
           };
         }
