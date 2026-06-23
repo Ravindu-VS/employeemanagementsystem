@@ -935,8 +935,7 @@ function LiveWorkerCard({
     </div>
   );
 }
-=======
->>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
+
 
 // =====================================================
 // PAYROLL RECORD CARD (saved payroll - collapsible)

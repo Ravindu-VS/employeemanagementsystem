@@ -1,8 +1,4 @@
-
-
-export function generateStaticParams() {
-  return [];
-}
+'use client';
 
 /**
  * =====================================================
