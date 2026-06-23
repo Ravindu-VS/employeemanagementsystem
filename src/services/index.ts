@@ -91,6 +91,7 @@ export {
   rejectAdvance,
   cancelAdvance,
   markAdvanceDeducted,
+<<<<<<< HEAD
   markAdvanceCarriedForward,
   getUndeductedAdvances,
   getAdvancesForPayrollWeek,
@@ -98,6 +99,13 @@ export {
   getCarriedForwardAdvances,
   getDeductedAdvances,
   resetCarryForwardForWeek,
+=======
+  getAllPendingAdvances,
+  getPendingAdvancesByWorkerIds,
+  checkDuplicatePendingAdvance,
+  updateAdvanceRequest,
+  deleteAdvance,
+>>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
 } from './advance-service';
 
 // Loan Service

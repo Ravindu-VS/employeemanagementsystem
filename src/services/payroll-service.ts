@@ -17,32 +17,158 @@ import {
 } from '@/lib/firebase/firestore';
 import { uploadPayslip, getFileUrl } from '@/lib/firebase/storage';
 import { COLLECTIONS, PAYROLL_CONFIG } from '@/constants';
-import { 
-  toISODateString, 
-  getWeekStart, 
+import {
+  toISODateString,
+  getWeekStart,
   getWeekEnd,
   addTime,
   subTime,
 } from '@/lib/date-utils';
+import { calculateOtRate, calculateOtPay, calculateBasePay, calculatePayrollBreakdown } from "@/domain/payroll";
 import { getWorkerWeeklyAttendanceSummary, getWorkerWeeklyAttendanceBySite } from './attendance-service';
 import { getEmployee } from './employee-service';
+<<<<<<< HEAD
 import { getAdvancesForPayrollWeek } from './advance-service';
 import { getActiveSites } from './site-service';
 import { getDriverAttendanceForDateRange } from './attendance-service';
 import type { 
   WeeklyPayroll, 
   PayrollStatus, 
+=======
+import { getPendingAdvancesByWorkerIds, markAdvanceDeducted } from './advance-service';
+import { getActiveSites, getAllSites } from './site-service';
+import type {
+  WeeklyPayroll,
+  PayrollStatus,
+>>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
   PaymentMethod,
   BonusEntry,
   AdvanceDeduction,
   LoanDeduction,
   OtherDeduction,
   SiteBreakdown,
-  PaginatedResponse, 
+  PaginatedResponse,
   PaginationParams,
   UserProfile,
   DateRange,
 } from '@/types';
+
+// =====================================================
+// PAYROLL CALCULATION HELPERS
+// =====================================================
+
+/**
+ * Calculate payroll breakdown for a single site
+ */
+export function calculateSiteBreakdown(siteId: string, siteName: string, daysWorked: number, otHours: number, dailyRate: number) {
+  const otRate = calculateOtRate(dailyRate);
+  const basePay = daysWorked * dailyRate;
+  const otPay = otHours * otRate;
+  return { siteId, siteName, daysWorked, otHours, basePay, otRate, otPay, totalPay: basePay + otPay };
+}
+
+/**
+ * Aggregate a worker's payroll across all sites
+ */
+export function aggregateWorkerPayroll(workerId: string, workerName: string, dailyRate: number, siteBreakdowns: any[], advance: number, loan: number, other: number) {
+  let totalDaysWorked = 0, totalOtHours = 0, totalBasePay = 0, totalOtPay = 0, grossPay = 0;
+  for (const b of siteBreakdowns) {
+    totalDaysWorked += b.daysWorked;
+    totalOtHours += b.otHours;
+    totalBasePay += b.basePay;
+    totalOtPay += b.otPay;
+    grossPay += b.totalPay;
+  }
+  return { workerId, workerName, totalDaysWorked, totalOtHours, totalBasePay, totalOtPay, grossPay, advanceDeduction: advance, loanDeduction: loan, otherDeduction: other, finalPay: Math.max(0, grossPay - advance - loan - other) };
+}
+
+// =====================================================
+// TYPES
+// =====================================================
+
+export type SitePayrollSummary = {
+  siteId: string;
+  siteName: string;
+  totalWorkers: number;
+  totalDaysWorked: number;
+  totalOtHours: number;
+  totalBasePay: number;
+  totalOtPay: number;
+  totalGrossPay: number;
+};
+
+export type PayrollSummary = {
+  totalWorkers: number;
+  totalDaysWorked: number;
+  totalOtHours: number;
+  totalBasePay: number;
+  totalOtPay: number;
+  totalGrossSalary: number;
+  totalAdvanceDeductions: number;
+  totalLoanDeductions: number;
+  totalOtherDeductions: number;
+  finalPayrollTotal: number;
+};
+
+/**
+ * Aggregate payroll data by site from worker records
+ */
+export function aggregateSitePayroll(workers: any[]): SitePayrollSummary[] {
+  const siteMap = new Map<string, SitePayrollSummary>();
+
+  for (const worker of workers) {
+    const siteBreakdowns = worker.siteBreakdowns || worker.sites || [];
+    for (const site of siteBreakdowns) {
+      const siteId = site.siteId;
+      const existing = siteMap.get(siteId) || {
+        siteId,
+        siteName: site.siteName || siteId,
+        totalWorkers: 0,
+        totalDaysWorked: 0,
+        totalOtHours: 0,
+        totalBasePay: 0,
+        totalOtPay: 0,
+        totalGrossPay: 0,
+      };
+
+      existing.totalWorkers += 1;
+      existing.totalDaysWorked += site.daysWorked || 0;
+      existing.totalOtHours += site.otHours || 0;
+      existing.totalBasePay += site.basePay || 0;
+      existing.totalOtPay += site.otPay || 0;
+      existing.totalGrossPay += site.totalPay || 0;
+
+      siteMap.set(siteId, existing);
+    }
+  }
+
+  return Array.from(siteMap.values()).sort((a, b) => b.totalGrossPay - a.totalGrossPay);
+}
+
+/**
+ * Calculate overall payroll summary from all workers
+ */
+export function calculateOverallPayroll(workers: any[]): PayrollSummary {
+  return workers.reduce((acc, w) => {
+    acc.totalWorkers++;
+    acc.totalDaysWorked += w.totalDaysWorked || 0;
+    acc.totalOtHours += w.totalOtHours || 0;
+    acc.totalBasePay += w.totalBasePay || 0;
+    acc.totalOtPay += w.totalOtPay || 0;
+    acc.totalGrossSalary += w.grossPay || 0;
+    acc.totalAdvanceDeductions += w.advanceDeduction || 0;
+    acc.totalLoanDeductions += w.loanDeduction || 0;
+    acc.totalOtherDeductions += w.otherDeduction || 0;
+    acc.finalPayrollTotal += w.finalPay || w.grossPay || 0;
+    return acc;
+  }, {
+    totalWorkers: 0, totalDaysWorked: 0, totalOtHours: 0,
+    totalBasePay: 0, totalOtPay: 0, totalGrossSalary: 0,
+    totalAdvanceDeductions: 0, totalLoanDeductions: 0,
+    totalOtherDeductions: 0, finalPayrollTotal: 0,
+  });
+}
+
 
 /**
  * Get payroll record by ID
@@ -126,41 +252,46 @@ export async function getEmployeePayrollHistory(
 
 /**
  * Generate payroll for an employee for a specific week
+ * Uses domain engines for multi-site calculation and deductions
  */
 export async function generateEmployeePayroll(
   employeeId: string,
   weekStartDate: Date,
-  generatedBy: string
+  generatedBy: string,
+  selectedAdvanceIds: string[] = []
 ): Promise<WeeklyPayroll> {
   // Get employee details
   const employee = await getEmployee(employeeId);
-  
+
   if (!employee) {
     throw new Error('Employee not found');
   }
-  
+
   const weekStart = getWeekStart(weekStartDate);
   const weekEnd = getWeekEnd(weekStartDate);
   const weekStartStr = toISODateString(weekStart);
   const weekEndStr = toISODateString(weekEnd);
-  
+
   // Check if payroll already exists
   const existingPayroll = await getEmployeePayrollForWeek(employeeId, weekStartStr);
-  
+
   if (existingPayroll) {
     throw new Error('Payroll already exists for this week');
   }
-  
+
   // Get per-site attendance breakdown
   const workerId = employee.workerId || employee.uid;
   const siteAttendance = await getWorkerWeeklyAttendanceBySite(workerId, weekStartStr, weekEndStr);
-  
-  // Get site names for display
-  const allSites = await getActiveSites();
+
+  // Get ALL site names for display (including completed/on_hold sites)
+  const allSites = await getAllSites();
   const siteNameMap = new Map(allSites.map(s => [s.id, s.name]));
-  
-  // Calculate per-site earnings
+
+  // ========================================
+  // DOMAIN ENGINE: Calculate per-site breakdown
+  // ========================================
   const dailyRate = employee.dailyRate || 0;
+<<<<<<< HEAD
   const otRate = employee.otRate || 0;
   
   let siteBreakdowns: SiteBreakdown[] = [];
@@ -212,60 +343,92 @@ export async function generateEmployeePayroll(
   const regularHours = daysWorked * 8;
   const totalHours = regularHours + overtimeHours;
   
+=======
+  const siteBreakdowns: SiteBreakdown[] = Object.entries(siteAttendance).map(
+    ([siteId, data]) => {
+      return calculateSiteBreakdown(
+        siteId,
+        siteNameMap.get(siteId) || `Site ${siteId.substring(0, 6)}`,
+        data.daysWorked,
+        data.otHours,
+        dailyRate
+      ) as unknown as SiteBreakdown;
+    }
+  );
+
+>>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
   // Get advance deductions for this week
-  const weekAdvances = await getAdvancesForPayrollWeek(employeeId, weekStartStr);
-  const advances: AdvanceDeduction[] = weekAdvances.map(adv => ({
+  const allPendingAdvances = await getPendingAdvancesByWorkerIds([workerId]);
+  const weekAdvances = allPendingAdvances.filter(a => selectedAdvanceIds.includes(a.id));
+  const advanceDeductionAmount = weekAdvances.reduce((sum, a) => sum + a.amount, 0);
+
+
+  // TODO: Get pending loans
+  const loanDeductions: LoanDeduction[] = [];
+  const loanDeductionAmount = loanDeductions.reduce((sum, l) => sum + l.emiAmount, 0);
+
+  const otherDeductions: OtherDeduction[] = [];
+  const otherDeductionAmount = otherDeductions.reduce((sum, o) => sum + o.amount, 0);
+
+  // ========================================
+  // DOMAIN ENGINE: Aggregate worker payroll
+  // ========================================
+  const workerPayroll = aggregateWorkerPayroll(
+    employeeId,
+    employee.displayName || employee.email,
+    dailyRate,
+    siteBreakdowns as any,
+    advanceDeductionAmount,
+    loanDeductionAmount,
+    otherDeductionAmount
+  );
+
+  // Map advance records for storage
+  const advances: AdvanceDeduction[] = weekAdvances.map((adv: any) => ({
     advanceId: adv.id,
     amount: adv.amount,
     description: adv.reason || 'Advance deduction',
   }));
-  
-  // TODO: Get pending loans
-  const loanDeductions: LoanDeduction[] = [];
-  const otherDeductions: OtherDeduction[] = [];
-  
-  const totalEarnings = regularEarnings + overtimeEarnings;
-  const totalDeductions = 
-    advances.reduce((sum, a) => sum + a.amount, 0) +
-    loanDeductions.reduce((sum, l) => sum + l.emiAmount, 0) +
-    otherDeductions.reduce((sum, o) => sum + o.amount, 0);
-  
-  const netPay = totalEarnings - totalDeductions;
-  
-  // Create payroll record
+
+  // Mark selected advances as deducted
+  if (weekAdvances.length > 0) {
+    await Promise.all(weekAdvances.map((adv: any) => markAdvanceDeducted(adv.id, weekStartStr)));
+  }
+
+  // Create payroll record with domain-calculated values
   const payrollData: Omit<WeeklyPayroll, 'id' | 'createdAt' | 'updatedAt'> = {
     weekStartDate: weekStartStr,
     weekEndDate: weekEndStr,
     employeeId,
-    employeeName: employee.displayName || employee.email,
+    employeeName: workerPayroll.workerName,
     employeeRole: employee.role,
-    
-    regularHours,
-    overtimeHours,
-    totalHours: regularHours + overtimeHours,
-    daysWorked,
-    
-    regularEarnings,
-    overtimeEarnings,
+
+    regularHours: workerPayroll.totalDaysWorked * 8,
+    overtimeHours: workerPayroll.totalOtHours,
+    totalHours: (workerPayroll.totalDaysWorked * 8) + workerPayroll.totalOtHours,
+    daysWorked: workerPayroll.totalDaysWorked,
+
+    regularEarnings: workerPayroll.totalBasePay,
+    overtimeEarnings: workerPayroll.totalOtPay,
     bonuses: [],
-    totalEarnings,
-    
+    totalEarnings: workerPayroll.grossPay,
+
     siteBreakdowns,
-    
+
     advances,
     loanDeductions,
     otherDeductions,
-    totalDeductions,
-    
-    netPay,
+    totalDeductions: workerPayroll.advanceDeduction + workerPayroll.loanDeduction + workerPayroll.otherDeduction,
+
+    netPay: workerPayroll.finalPay,
     status: 'draft',
-    
+
     generatedAt: new Date(),
     generatedBy,
   };
-  
+
   const id = await createDocument<WeeklyPayroll>(COLLECTIONS.PAYROLL, payrollData as any);
-  
+
   return {
     id,
     ...payrollData,
@@ -280,7 +443,8 @@ export async function generateEmployeePayroll(
 export async function generateWeeklyPayroll(
   weekStartDate: Date,
   generatedBy: string,
-  employeeIds?: string[]
+  employeeIds?: string[],
+  selectedAdvanceIds: string[] = []
 ): Promise<{ success: number; failed: number; errors: string[] }> {
   // Import dynamically to avoid circular dependency
   const { getAllEmployees } = await import('./employee-service');
@@ -300,7 +464,7 @@ export async function generateWeeklyPayroll(
   
   for (const employee of employees) {
     try {
-      await generateEmployeePayroll(employee.uid, weekStartDate, generatedBy);
+      await generateEmployeePayroll(employee.uid, weekStartDate, generatedBy, selectedAdvanceIds);
       success++;
     } catch (error: any) {
       failed++;
@@ -430,7 +594,7 @@ export async function getWeeklyPayrollSummary(weekStartDate: string): Promise<{
   statusBreakdown: Record<PayrollStatus, number>;
 }> {
   const payrolls = await getPayrollsForWeek(weekStartDate);
-  
+
   const statusBreakdown: Record<PayrollStatus, number> = {
     draft: 0,
     pending_approval: 0,
@@ -438,11 +602,11 @@ export async function getWeeklyPayrollSummary(weekStartDate: string): Promise<{
     paid: 0,
     cancelled: 0,
   };
-  
+
   payrolls.forEach(p => {
     statusBreakdown[p.status] = (statusBreakdown[p.status] || 0) + 1;
   });
-  
+
   return {
     totalEmployees: payrolls.length,
     totalRegularHours: payrolls.reduce((sum, p) => sum + p.regularHours, 0),
@@ -452,6 +616,68 @@ export async function getWeeklyPayrollSummary(weekStartDate: string): Promise<{
     totalNetPay: payrolls.reduce((sum, p) => sum + p.netPay, 0),
     statusBreakdown,
   };
+}
+
+/**
+ * Get site summaries for a week (for payroll page site cards)
+ * Returns aggregated site totals using domain engine
+ */
+export async function getSitePayrollSummary(weekStartDate: string): Promise<SitePayrollSummary[]> {
+  const payrolls = await getPayrollsForWeek(weekStartDate);
+
+  if (payrolls.length === 0) {
+    return [];
+  }
+
+  // Create workerPayroll objects from stored payroll records
+  const workers = payrolls.map(p => ({
+    workerId: p.employeeId,
+    workerName: p.employeeName || '',
+    dailyRate: p.regularEarnings > 0 ? p.regularEarnings / (p.daysWorked || 1) : 0,
+    totalDaysWorked: p.daysWorked,
+    totalOtHours: p.overtimeHours,
+    totalBasePay: p.regularEarnings,
+    totalOtPay: p.overtimeEarnings,
+    grossPay: p.totalEarnings,
+  }));
+
+  return aggregateSitePayroll(workers as any);
+}
+
+/**
+ * Get grand payroll summary for a week (for payroll page totals section)
+ * Returns overall summary using domain engine
+ */
+export async function getGrandPayrollSummary(weekStartDate: string): Promise<PayrollSummary> {
+  const payrolls = await getPayrollsForWeek(weekStartDate);
+
+  if (payrolls.length === 0) {
+    return {
+      totalWorkers: 0,
+      totalDaysWorked: 0,
+      totalOtHours: 0,
+      totalBasePay: 0,
+      totalOtPay: 0,
+      totalGrossSalary: 0,
+      totalAdvanceDeductions: 0,
+      totalLoanDeductions: 0,
+      totalOtherDeductions: 0,
+      finalPayrollTotal: 0,
+    };
+  }
+
+  const workers = payrolls.map(p => ({
+    workerId: p.employeeId,
+    workerName: p.employeeName || '',
+    dailyRate: p.regularEarnings > 0 ? p.regularEarnings / (p.daysWorked || 1) : 0,
+    totalDaysWorked: p.daysWorked,
+    totalOtHours: p.overtimeHours,
+    totalBasePay: p.regularEarnings,
+    totalOtPay: p.overtimeEarnings,
+    grossPay: p.totalEarnings,
+  }));
+
+  return calculateOverallPayroll(workers as any);
 }
 
 /**
@@ -475,3 +701,4 @@ export async function uploadPayslipPdf(
   
   return url;
 }
+

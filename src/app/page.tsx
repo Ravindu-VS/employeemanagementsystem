@@ -93,7 +93,7 @@ export default function HomePage() {
           <div className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 rounded-full px-4 py-1.5 mb-6">
             <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
             <span className="text-blue-400 text-sm font-medium">
-              Welcome to Employee Management System
+              Welcome to KK & SONS Architectural Services EMS
             </span>
           </div>
           
@@ -254,7 +254,7 @@ export default function HomePage() {
                 <Building2 className="w-4 h-4 text-white" />
               </div>
               <span className="text-slate-400 text-sm">
-                © 2025 Employee Management System
+                © {new Date().getFullYear()} KK & SONS Architectural Services
               </span>
             </div>
             <div className="flex gap-6 text-sm text-slate-400">

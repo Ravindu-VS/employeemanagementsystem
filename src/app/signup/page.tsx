@@ -18,7 +18,33 @@ import { useToast } from '@/components/ui/use-toast';
 import { ROUTES, COLLECTIONS } from '@/constants';
 import { Building2, Mail, Lock, User, Phone, Loader2, ArrowLeft, ShieldCheck } from 'lucide-react';
 
+<<<<<<< HEAD
 // Validation schema — NO role field
+=======
+// Role icons mapping
+const roleIcons: Record<string, React.ReactNode> = {
+  owner: <ShieldCheck className="h-4 w-4 sm:h-5 sm:w-5" />,
+  ceo: <Briefcase className="h-4 w-4 sm:h-5 sm:w-5" />,
+  manager: <Users className="h-4 w-4 sm:h-5 sm:w-5" />,
+  supervisor: <MapPin className="h-4 w-4 sm:h-5 sm:w-5" />,
+  draughtsman: <Briefcase className="h-4 w-4 sm:h-5 sm:w-5" />,
+  bass: <Users className="h-4 w-4 sm:h-5 sm:w-5" />,
+  helper: <Users className="h-4 w-4 sm:h-5 sm:w-5" />,
+};
+
+// Role descriptions
+const roleDescriptions: Record<string, string> = {
+  owner: 'Full system access and control',
+  ceo: 'Executive access to all features',
+  manager: 'Manage employees, sites, and payroll',
+  supervisor: 'Supervise sites and track attendance',
+  draughtsman: 'Technical drawing and design work',
+  bass: 'Team lead for construction work',
+  helper: 'General construction assistance',
+};
+
+// Validation schema
+>>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
 const signupSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
@@ -197,7 +223,7 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+    <div className="min-h-screen flex items-center justify-center bg-background p-3 sm:p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex items-center justify-center mb-8">
@@ -206,8 +232,8 @@ export default function SignupPage() {
               <Building2 className="h-8 w-8 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold">EMS Admin</h1>
-              <p className="text-sm text-muted-foreground">Employee Management System</p>
+              <h1 className="text-xl sm:text-2xl font-bold">EMS Admin</h1>
+              <p className="text-sm text-muted-foreground">KK & SONS Architectural Services EMS</p>
             </div>
           </div>
         </div>
@@ -358,6 +384,7 @@ export default function SignupPage() {
                 </div>
               )}
 
+<<<<<<< HEAD
               {/* Approval Notice for non-first users */}
               {isFirstUser === false && (
                 <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-sm">
@@ -366,6 +393,159 @@ export default function SignupPage() {
                     An administrator will assign your role.
                   </p>
                 </div>
+=======
+              {step === 2 && (
+                <>
+                  {/* Role Selection - Only show if not first user */}
+                  {!isFirstUser && (
+                    <div className="space-y-3">
+                      <Label>Select Your Role *</Label>
+                      <div className="grid grid-cols-1 gap-2">
+                        {ROLE_OPTIONS.filter(r => r.value !== 'owner').map((role) => {
+                          const isSelected = form.watch('role') === role.value;
+                          return (
+                            <div
+                              key={role.value}
+                              onClick={() => form.setValue('role', role.value as any)}
+                              className={`
+                                flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all
+                                ${isSelected 
+                                  ? 'border-primary bg-primary/10' 
+                                  : 'border-border hover:border-primary/50'
+                                }
+                              `}
+                            >
+                              <div className={`
+                                p-2 rounded-full
+                                ${isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted'}
+                              `}>
+                                {roleIcons[role.value] || <User className="h-4 w-4 sm:h-5 sm:w-5" />}
+                              </div>
+                              <div className="flex-1">
+                                <p className="font-medium">{role.label}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {roleDescriptions[role.value]}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {form.formState.errors.role && (
+                        <p className="text-sm text-destructive">
+                          {form.formState.errors.role.message}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* First user - Owner role */}
+                  {isFirstUser && (
+                    <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-primary rounded-full">
+                          <ShieldCheck className="h-4 w-4 sm:h-5 sm:w-5 text-primary-foreground" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-primary">Owner Account</p>
+                          <p className="text-sm text-muted-foreground">
+                            As the first user, you'll have full system access
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Emergency Contact */}
+                  <div className="space-y-2">
+                    <Label htmlFor="emergencyContact">Emergency Contact (Optional)</Label>
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="emergencyContact"
+                        placeholder="+94 77 987 6543"
+                        className="pl-9"
+                        disabled={isLoading}
+                        {...form.register('emergencyContact')}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Password */}
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password *</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="password"
+                        type="password"
+                        placeholder="••••••••"
+                        className="pl-9"
+                        disabled={isLoading}
+                        {...form.register('password')}
+                      />
+                    </div>
+                    {form.formState.errors.password && (
+                      <p className="text-sm text-destructive">
+                        {form.formState.errors.password.message}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Confirm Password */}
+                  <div className="space-y-2">
+                    <Label htmlFor="confirmPassword">Confirm Password *</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="confirmPassword"
+                        type="password"
+                        placeholder="••••••••"
+                        className="pl-9"
+                        disabled={isLoading}
+                        {...form.register('confirmPassword')}
+                      />
+                    </div>
+                    {form.formState.errors.confirmPassword && (
+                      <p className="text-sm text-destructive">
+                        {form.formState.errors.confirmPassword.message}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Approval Notice */}
+                  {!isFirstUser && ['draughtsman', 'bass', 'helper'].includes(form.watch('role')) && (
+                    <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-sm">
+                      <p className="text-yellow-600 dark:text-yellow-400">
+                        ⚠️ Your account will require admin approval before you can access the system.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Button Group */}
+                  <div className="flex gap-3">
+                    <Button 
+                      type="button" 
+                      variant="outline"
+                      className="flex-1" 
+                      onClick={() => setStep(1)}
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Back
+                    </Button>
+                    <Button type="submit" className="flex-1" disabled={isLoading}>
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Creating...
+                        </>
+                      ) : (
+                        'Create Account'
+                      )}
+                    </Button>
+                  </div>
+                </>
+>>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
               )}
 
               {/* Password */}

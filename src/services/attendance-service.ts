@@ -17,7 +17,7 @@ import {
   generateDocId,
   serverTimestamp,
 } from '@/lib/firebase/firestore';
-import { writeBatch, doc, collection } from 'firebase/firestore';
+import { writeBatch, doc, collection, deleteField } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { uploadAttendancePhoto } from '@/lib/firebase/storage';
 import { COLLECTIONS, ATTENDANCE_CONFIG } from '@/constants';
@@ -584,12 +584,17 @@ export async function markSimpleAttendance(
  * Bulk mark attendance for multiple workers (supervisor workflow).
  * Uses Firestore writeBatch for performance — single round-trip.
  * Only writes changed records to minimise Firestore operations.
+ *
+ * Role-aware:
+ * - Supervisor: merges site visits (preserves other sites)
+ * - Labor: updates morning/evening shifts
  */
 export async function bulkMarkSimpleAttendance(
   date: string,
   siteId: string,
   entries: BulkAttendanceEntry[],
-  supervisorId: string
+  supervisorId: string,
+  workerRoles?: Record<string, string> // REQUIRED: current role from employees
 ): Promise<{ success: number; failed: number }> {
   // 1. Pre-fetch ALL existing records for this date in one query
   const existingRecords = await getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
@@ -611,6 +616,7 @@ export async function bulkMarkSimpleAttendance(
 
   for (const entry of entries) {
     try {
+<<<<<<< HEAD
       const isMultiSite = ['owner', 'ceo', 'manager', 'supervisor'].includes(entry.role);
       const workerRecords = recordsByWorker.get(entry.workerId) || [];
       
@@ -631,17 +637,62 @@ export async function bulkMarkSimpleAttendance(
         // Regular worker: use their one and only record
         existing = workerRecords[0];
       }
+=======
+      const existing = existingMap.get(entry.workerId);
+      const workerRole = workerRoles?.[entry.workerId];
+>>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
 
-      const morningSite = entry.morning ? siteId : (existing?.morningSite ?? null);
-      const eveningSite = entry.evening ? siteId : (existing?.eveningSite ?? null);
-      const otHours = entry.otHours;
+      // =====================================================
+      // CRITICAL FIX: Explicit absence clearing
+      // When unchecking a shift at current site, MUST set to null (not preserve old value)
+      // =====================================================
+
+      let updateMorningSite: string | null;
+      let updateEveningSite: string | null;
+
+      if (entry.morning) {
+        // Marking morning at this site
+        updateMorningSite = siteId;
+      } else {
+        // Unchecking morning - check if it was marked at THIS site
+        updateMorningSite = (!entry.morning && existing?.morningSite === siteId) ? null : (existing?.morningSite || null);
+      }
+
+      if (entry.evening) {
+        // Marking evening at this site
+        updateEveningSite = siteId;
+      } else {
+        // Unchecking evening - check if it was marked at THIS site
+        updateEveningSite = (!entry.evening && existing?.eveningSite === siteId) ? null : (existing?.eveningSite || null);
+      }
+
+      // Build siteOtHours mapping - track OT per site
+      let siteOtHours = { ...(existing?.siteOtHours || {}) };
+
+      if (entry.otHours > 0) {
+        // Update OT for this site
+        siteOtHours[siteId] = entry.otHours;
+      } else if (entry.otHours === 0) {
+        // Only clear OT for this site if we're clearing both morning AND evening at this site
+        if (updateMorningSite === null && updateEveningSite === null && (existing?.morningSite === siteId || existing?.eveningSite === siteId)) {
+          delete siteOtHours[siteId];
+        }
+      }
+
+      // Calculate total otHours from all sites
+      const otHours = Object.values(siteOtHours).reduce((sum, h) => sum + (Number(h) || 0), 0);
+
+      // =====================================================
+      // FIXED: Skip detection must use the CORRECTED site values
+      // =====================================================
 
       // Skip if nothing changed
       if (
         existing &&
-        existing.morningSite === morningSite &&
-        existing.eveningSite === eveningSite &&
-        existing.otHours === otHours
+        existing.morningSite === updateMorningSite &&
+        existing.eveningSite === updateEveningSite &&
+        existing.otHours === otHours &&
+        JSON.stringify(existing.siteOtHours) === JSON.stringify(siteOtHours)
       ) {
         success++;
         continue;
@@ -650,32 +701,80 @@ export async function bulkMarkSimpleAttendance(
       if (existing) {
         // Update existing doc
         const docRef = doc(db, SIMPLE_ATTENDANCE_COLLECTION, existing.id);
-        batch.update(docRef, {
-          morningSite,
-          eveningSite,
+
+        const updateData: any = {
+          // Use deleteField() to actually remove fields from Firestore on unmark
+          morningSite: updateMorningSite === null ? deleteField() : updateMorningSite,
+          eveningSite: updateEveningSite === null ? deleteField() : updateEveningSite,
+          siteOtHours: Object.keys(siteOtHours).length > 0 ? siteOtHours : deleteField(),
           otHours,
           supervisorId,
           attendanceType: 'site',
           updatedAt: serverTimestamp(),
+        };
+
+        console.debug('[ATTENDANCE SAVE - UPDATE]', {
+          workerId: entry.workerId,
+          date,
+          siteId,
+          before: {
+            morningSite: existing.morningSite,
+            eveningSite: existing.eveningSite,
+            otHours: existing.otHours,
+          },
+          after: {
+            morningSite: updateMorningSite,
+            eveningSite: updateEveningSite,
+            otHours,
+          },
+          action: (updateMorningSite === null || updateEveningSite === null) ? 'clear-absence' : 'update-presence',
         });
+
+        batch.update(docRef, updateData);
       } else {
         // Create new doc
         const newDocRef = doc(collection(db, SIMPLE_ATTENDANCE_COLLECTION));
-        batch.set(newDocRef, {
+        const newData: any = {
           date,
           workerId: entry.workerId,
           workerName: entry.workerName,
-          morningSite,
-          eveningSite,
+          role: workerRole || 'helper',
           otHours,
           supervisorId,
           attendanceType: 'site',
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
+        };
+
+        // Only include site fields if they have values (avoid undefined in Firestore)
+        if (updateMorningSite) {
+          newData.morningSite = updateMorningSite;
+        }
+        if (updateEveningSite) {
+          newData.eveningSite = updateEveningSite;
+        }
+        if (Object.keys(siteOtHours).length > 0) {
+          newData.siteOtHours = siteOtHours;
+        }
+
+        batch.set(newDocRef, newData);
+
+        console.debug('[ATTENDANCE SAVE - CREATE]', {
+          workerId: entry.workerId,
+          date,
+          siteId,
+          morning: updateMorningSite,
+          evening: updateEveningSite,
+          otHours,
         });
       }
       success++;
-    } catch {
+    } catch (err) {
+      console.error('[ATTENDANCE SAVE ERROR]', {
+        workerId: entry.workerId,
+        message: err instanceof Error ? err.message : String(err),
+        error: err,
+      });
       failed++;
     }
   }

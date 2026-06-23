@@ -84,7 +84,7 @@ export default function ForgotPasswordPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 mb-4 shadow-lg">
             <Building2 className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white">
+          <h1 className="text-xl sm:text-2xl font-bold text-white">
             {APP_CONFIG.shortName} <span className="text-blue-400">Admin</span>
           </h1>
         </div>
@@ -133,7 +133,7 @@ export default function ForgotPasswordPage() {
                   </div>
                 </CardContent>
 
-                <CardFooter className="flex flex-col gap-4">
+                <CardFooter className="flex flex-col gap-3 sm:p-4">
                   <Button
                     type="submit"
                     className="w-full bg-blue-600 hover:bg-blue-700"

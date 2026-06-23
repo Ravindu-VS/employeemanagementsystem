@@ -10,9 +10,9 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { 
-  Plus, 
-  Search, 
+import {
+  Plus,
+  Search,
   Filter,
   MoreHorizontal,
   Eye,
@@ -29,6 +29,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmployeeCard } from '@/components/employees/EmployeeCard';
 import { getAllEmployees, deactivateEmployee, reactivateEmployee, deleteEmployee } from '@/services';
 import { createAuditLog } from '@/services/audit-service';
 import { useRequireRole } from '@/components/providers/auth-provider';
@@ -172,75 +173,76 @@ export default function EmployeesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Employees</h1>
-          <p className="text-muted-foreground">
+      <div className="flex flex-col gap-3 sm:gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Employees</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">
             Manage your workforce and employee records
           </p>
         </div>
         {canManage && (
-          <Link href={ROUTES.EMPLOYEES.CREATE}>
-            <Button className="gap-2">
+          <Link href={ROUTES.EMPLOYEES.CREATE} className="w-full sm:w-auto">
+            <Button className="gap-2 w-full sm:w-auto">
               <Plus className="h-4 w-4" />
-              Add Employee
+              <span className="hidden sm:inline">Add Employee</span>
+              <span className="sm:hidden">Add</span>
             </Button>
           </Link>
         )}
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
         <Card className="bg-card/50">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-blue-500/20 p-2">
-                <Users className="h-5 w-5 text-blue-400" />
+          <CardContent className="p-2.5 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="rounded-lg bg-blue-500/20 p-1.5 sm:p-2 shrink-0">
+                <Users className="h-4 w-4 sm:h-5 sm:w-5 text-blue-400" />
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total</p>
-                <p className="text-2xl font-bold">{employees.length}</p>
+              <div className="min-w-0">
+                <p className="text-xs sm:text-sm text-muted-foreground">Total</p>
+                <p className="text-xl sm:text-2xl font-bold">{employees.length}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-green-500/20 p-2">
-                <UserCheck className="h-5 w-5 text-green-400" />
+          <CardContent className="p-2.5 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="rounded-lg bg-green-500/20 p-1.5 sm:p-2 shrink-0">
+                <UserCheck className="h-4 w-4 sm:h-5 sm:w-5 text-green-400" />
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Active</p>
-                <p className="text-2xl font-bold">{activeCount}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card/50">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-red-500/20 p-2">
-                <UserX className="h-5 w-5 text-red-400" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Inactive</p>
-                <p className="text-2xl font-bold">{inactiveCount}</p>
+              <div className="min-w-0">
+                <p className="text-xs sm:text-sm text-muted-foreground">Active</p>
+                <p className="text-xl sm:text-2xl font-bold">{activeCount}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-purple-500/20 p-2">
-                <Building2 className="h-5 w-5 text-purple-400" />
+          <CardContent className="p-2.5 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="rounded-lg bg-red-500/20 p-1.5 sm:p-2 shrink-0">
+                <UserX className="h-4 w-4 sm:h-5 sm:w-5 text-red-400" />
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Roles</p>
-                <p className="text-2xl font-bold">{Object.keys(roleStats).length}</p>
+              <div className="min-w-0">
+                <p className="text-xs sm:text-sm text-muted-foreground">Inactive</p>
+                <p className="text-xl sm:text-2xl font-bold">{inactiveCount}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-card/50">
+          <CardContent className="p-2.5 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="rounded-lg bg-purple-500/20 p-1.5 sm:p-2 shrink-0">
+                <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-purple-400" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs sm:text-sm text-muted-foreground">Roles</p>
+                <p className="text-xl sm:text-2xl font-bold">{Object.keys(roleStats).length}</p>
               </div>
             </div>
           </CardContent>
@@ -249,20 +251,21 @@ export default function EmployeesPage() {
 
       {/* Search and Filters */}
       <Card className="bg-card/50">
-        <CardContent className="p-4">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center">
-            <div className="relative flex-1">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+            <div className="relative flex-1 min-w-0">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search employees..."
+                placeholder="Search..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
+                className="pl-9 text-sm"
               />
             </div>
             <Button
               variant="outline"
-              className="gap-2"
+              size="sm"
+              className="gap-2 w-full sm:w-auto"
               onClick={() => setShowFilters(!showFilters)}
             >
               <Filter className="h-4 w-4" />
@@ -276,13 +279,13 @@ export default function EmployeesPage() {
 
           {/* Expanded Filters */}
           {showFilters && (
-            <div className="mt-4 flex flex-wrap gap-4 border-t border-border pt-4">
+            <div className="mt-3 sm:mt-4 flex flex-col gap-3 sm:flex-row sm:gap-4 border-t border-border pt-3 sm:pt-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">Role</label>
+                <label className="text-xs sm:text-sm font-medium text-muted-foreground">Role</label>
                 <select
                   value={roleFilter}
                   onChange={(e) => setRoleFilter(e.target.value as UserRole | 'all')}
-                  className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+                  className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm"
                 >
                   <option value="all">All Roles</option>
                   {Object.entries(USER_ROLES).map(([key, role]) => (
@@ -291,11 +294,11 @@ export default function EmployeesPage() {
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">Status</label>
+                <label className="text-xs sm:text-sm font-medium text-muted-foreground">Status</label>
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
-                  className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+                  className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm"
                 >
                   <option value="all">All Status</option>
                   <option value="active">Active</option>
@@ -325,126 +328,149 @@ export default function EmployeesPage() {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border text-left">
-                    <th className="p-4 font-medium text-muted-foreground">Employee</th>
-                    <th className="p-4 font-medium text-muted-foreground">Role</th>
-                    <th className="p-4 font-medium text-muted-foreground">Contact</th>
-                    <th className="p-4 font-medium text-muted-foreground">Daily Rate</th>
-                    <th className="p-4 font-medium text-muted-foreground">Status</th>
-                    <th className="p-4 font-medium text-muted-foreground">Joined</th>
-                    <th className="p-4 font-medium text-muted-foreground">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredEmployees.map((employee) => (
-                    <tr 
-                      key={employee.uid} 
-                      className="border-b border-border/50 transition-colors hover:bg-muted/30"
-                    >
-                      <td className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 font-medium text-primary">
-                            {(employee.displayName || 'U').charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <p className="font-medium">{employee.displayName || 'Unnamed'}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {employee.workerId || 'No ID'}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <span className={cn(
-                          'inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium',
-                          roleBadgeColors[employee.role]
-                        )}>
-                          {USER_ROLES[employee.role]?.label || employee.role}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-1.5 text-sm">
-                            <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span className="truncate max-w-[150px]">{employee.email}</span>
-                          </div>
-                          {employee.phone && (
-                            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                              <Phone className="h-3.5 w-3.5" />
-                              {employee.phone}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <span className="font-medium">
-                          LKR {employee.dailyRate?.toLocaleString() || '0'}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        <span className={cn(
-                          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-                          employee.isActive 
-                            ? 'bg-green-500/20 text-green-400' 
-                            : 'bg-red-500/20 text-red-400'
-                        )}>
-                          <span className={cn(
-                            'h-1.5 w-1.5 rounded-full',
-                            employee.isActive ? 'bg-green-400' : 'bg-red-400'
-                          )} />
-                          {employee.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="p-4 text-sm text-muted-foreground">
-                        {formatDate(employee.joiningDate || employee.createdAt)}
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <Link href={ROUTES.EMPLOYEES.DETAIL(employee.uid)}>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </Link>
-                          {canManage && (
-                            <>
-                              <Link href={ROUTES.EMPLOYEES.EDIT(employee.uid)}>
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </Link>
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="h-8 w-8 p-0"
-                                onClick={() => handleToggleStatus(employee)}
-                              >
-                                {employee.isActive ? (
-                                  <UserX className="h-4 w-4 text-red-400" />
-                                ) : (
-                                  <UserCheck className="h-4 w-4 text-green-400" />
-                                )}
-                              </Button>
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="h-8 w-8 p-0"
-                                onClick={() => handleDelete(employee)}
-                                disabled={deletingId === employee.uid}
-                              >
-                                <Trash2 className="h-4 w-4 text-red-400" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </td>
+            <>
+              {/* Desktop Table View (visible on md+) */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border text-left">
+                      <th className="p-4 font-medium text-muted-foreground">Employee</th>
+                      <th className="p-4 font-medium text-muted-foreground">Role</th>
+                      <th className="p-4 font-medium text-muted-foreground">Contact</th>
+                      <th className="p-4 font-medium text-muted-foreground">Daily Rate</th>
+                      <th className="p-4 font-medium text-muted-foreground">Status</th>
+                      <th className="p-4 font-medium text-muted-foreground">Joined</th>
+                      <th className="p-4 font-medium text-muted-foreground">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {filteredEmployees.map((employee) => (
+                      <tr
+                        key={employee.uid}
+                        className="border-b border-border/50 transition-colors hover:bg-muted/30"
+                      >
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 font-medium text-primary">
+                              {(employee.displayName || 'U').charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="font-medium">{employee.displayName || 'Unnamed'}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {employee.workerId || 'No ID'}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <span
+                            className={cn(
+                              'inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium',
+                              roleBadgeColors[employee.role]
+                            )}
+                          >
+                            {USER_ROLES[employee.role]?.label || employee.role}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 text-sm">
+                              <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span className="truncate max-w-[150px]">{employee.email}</span>
+                            </div>
+                            {employee.phone && (
+                              <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                                <Phone className="h-3.5 w-3.5" />
+                                {employee.phone}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <span className="font-medium">
+                            LKR {employee.dailyRate?.toLocaleString() || '0'}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <span
+                            className={cn(
+                              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
+                              employee.isActive
+                                ? 'bg-green-500/20 text-green-400'
+                                : 'bg-red-500/20 text-red-400'
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                'h-1.5 w-1.5 rounded-full',
+                                employee.isActive ? 'bg-green-400' : 'bg-red-400'
+                              )}
+                            />
+                            {employee.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="p-4 text-sm text-muted-foreground">
+                          {formatDate(employee.joiningDate || employee.createdAt)}
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-2">
+                            <Link href={ROUTES.EMPLOYEES.DETAIL(employee.uid)}>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                            {canManage && (
+                              <>
+                                <Link href={ROUTES.EMPLOYEES.EDIT(employee.uid)}>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                </Link>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0"
+                                  onClick={() => handleToggleStatus(employee)}
+                                >
+                                  {employee.isActive ? (
+                                    <UserX className="h-4 w-4 text-red-400" />
+                                  ) : (
+                                    <UserCheck className="h-4 w-4 text-green-400" />
+                                  )}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0"
+                                  onClick={() => handleDelete(employee)}
+                                  disabled={deletingId === employee.uid}
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-400" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card View (visible on < md) */}
+              <div className="md:hidden grid grid-cols-1 gap-4">
+                {filteredEmployees.map((employee) => (
+                  <EmployeeCard
+                    key={employee.uid}
+                    employee={employee}
+                    canManage={canManage}
+                    onToggleStatus={handleToggleStatus}
+                    onDelete={handleDelete}
+                    isDeleting={deletingId === employee.uid}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

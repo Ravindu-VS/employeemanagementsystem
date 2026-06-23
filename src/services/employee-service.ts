@@ -203,16 +203,15 @@ export async function assignEmployeeToSites(
 }
 
 /**
- * Update employee rates (daily rate + OT rate)
+ * Update employee daily rate
+ * NOTE: OT rate is now calculated as dailyRate / 8 at runtime
  */
 export async function updateEmployeeRates(
   employeeId: string,
-  dailyRate: number,
-  otRate: number
+  dailyRate: number
 ): Promise<void> {
   await updateDocument<UserProfile>(COLLECTIONS.USERS, employeeId, {
     dailyRate,
-    otRate,
     // Keep legacy fields calculated
     hourlyRate: dailyRate / 8,
     weeklyRate: dailyRate * 6,

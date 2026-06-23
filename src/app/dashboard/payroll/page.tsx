@@ -2,17 +2,17 @@
 
 /**
  * =====================================================
- * PAYROLL PAGE — Redesigned
+ * PAYROLL PAGE - Redesigned
  * =====================================================
  * Section 1: Week Selector + Generate/Preview
  * Section 2: Site Summary Cards
  * Section 3: Worker Payroll Cards (collapsible)
  * Section 4: Payroll Summary
  *
- * All data from real Firebase queries — zero mocks.
+ * All data from real Firebase queries - zero mocks.
  */
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Calendar,
@@ -55,10 +55,23 @@ import {
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, cn } from '@/lib/utils';
+import { calculateOtRate } from "@/domain/payroll";
+import {
+  buildAttendanceEntries,
+  buildEmployeeSummaries,
+  buildSiteTotals,
+  buildGrandTotals,
+} from "@/domain/payroll/aggregation";
+import { groupAdvancesByEmployee, calculateSelectedAdvanceDeductions } from "@/domain/advances/grouping";
+import { WorkerPayrollCard } from '@/components/payroll/WorkerPayrollCard';
+import { SitePayrollCard } from '@/components/payroll/SitePayrollCard';
+import { PayrollSummary } from '@/components/payroll/PayrollSummary';
+import { buildSiteWorkerSummaries } from '@/domain/payroll/site-workers';
 import {
   formatDate,
   getWeekNumber,
   getWeekStart,
+  getWeekEnd,
   toISODateString,
   addWeeks,
   subWeeks,
@@ -71,6 +84,7 @@ import type {
   UserProfile,
   SiteBreakdown,
   SitePayrollTotal,
+  Advance,
   AdvanceRequest,
   WorkSite,
 } from '@/types';
@@ -115,7 +129,7 @@ interface EmployeeWeekSummary {
   dailyRate: number;
   otRate: number;
   siteBreakdowns: SiteBreakdown[];
-  advances: AdvanceRequest[];
+  advances: Advance[];
 }
 
 // =====================================================
@@ -133,21 +147,46 @@ export default function PayrollPage() {
   const [showPreview, setShowPreview] = useState(false);
   // Track which advances the CEO has checked for deduction (advanceId -> boolean)
   const [deductionSelections, setDeductionSelections] = useState<Record<string, boolean>>({});
+  const [isLoaded, setIsLoaded] = useState(false);
 
-  // Week boundaries (Monday start)
+  // Week boundaries (Monday start through Sunday end)
   const weekStart = getWeekStart(selectedDate);
+  const weekEnd = getWeekEnd(selectedDate);
   const weekNumber = getWeekNumber(selectedDate);
-  const saturday = new Date(weekStart);
-  saturday.setDate(weekStart.getDate() + 5);
 
   const weekStartStr = toISODateString(weekStart);
-  const saturdayStr = toISODateString(saturday);
+  const weekEndStr = toISODateString(weekEnd);
+
+  // Initialize deduction selections from localStorage on mount
+  useEffect(() => {
+    const key = `payroll-deductions-${weekStartStr}`;
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      try {
+        setDeductionSelections(JSON.parse(stored));
+      } catch (e) {
+        setDeductionSelections({});
+      }
+    } else {
+      setDeductionSelections({});
+    }
+    setIsLoaded(true);
+  }, [weekStartStr]);
+
+  // Persist deduction selections to localStorage whenever they change
+  useEffect(() => {
+    if (!isLoaded) return; // Wait for initial load
+    const key = `payroll-deductions-${weekStartStr}`;
+    localStorage.setItem(key, JSON.stringify(deductionSelections));
+  }, [deductionSelections, weekStartStr, isLoaded]);
 
   // ---- DATA QUERIES (all real Firebase data) ----
 
   const { data: weekAttendance = [], isLoading: loadingAttendance } = useQuery({
-    queryKey: ['week-attendance', weekStartStr, saturdayStr],
-    queryFn: () => getSimpleAttendanceForDateRange(weekStartStr, saturdayStr),
+    queryKey: ['week-attendance', weekStartStr, weekEndStr],
+    queryFn: () => getSimpleAttendanceForDateRange(weekStartStr, weekEndStr),
+    staleTime: 30 * 1000, // 30 seconds - refresh frequently for accurate payroll
+    gcTime: 5 * 60 * 1000, // 5 minutes background cache
   });
 
   const { data: driverAttendance = [], isLoading: loadingDriver } = useQuery({
@@ -170,11 +209,51 @@ export default function PayrollPage() {
     queryFn: () => getPayrollsForWeek(weekStartStr),
   });
 
-  // Fetch ALL pending advances in one query — grouped by worker in memory
+  // Fetch ALL pending advances in one query - grouped by worker in memory
   const { data: pendingAdvances = [] } = useQuery({
     queryKey: ['pending-advances'],
     queryFn: getAllPendingAdvances,
   });
+
+  // Auto-check all un-deducted advances for deduction
+  useEffect(() => {
+    if (!isLoaded || pendingAdvances.length === 0) return;
+
+    // Check if current selections state is truly empty (no advances checked)
+    const selectedAdvances = Object.values(deductionSelections).filter(Boolean).length;
+
+    if (selectedAdvances === 0) {
+      const autoSelections: Record<string, boolean> = {};
+      pendingAdvances.forEach(adv => {
+        // Auto-check only approved, un-deducted advances
+        if (!adv.deducted && adv.status === 'approved') {
+          autoSelections[adv.id] = true;
+          console.log(`✅ [AUTO-CHECK] ${adv.id}: ${adv.amount} LKR (status=${adv.status})`);
+        }
+      });
+
+      if (Object.keys(autoSelections).length > 0) {
+        console.log(`📊 [AUTO-SELECTIONS] Found ${Object.keys(autoSelections).length} un-deducted advances - auto-checking them`);
+        setDeductionSelections(autoSelections);
+      }
+    } else {
+      console.log(`📝 [AUTO-SELECTIONS SKIPPED] ${selectedAdvances} advances already selected`);
+    }
+  }, [pendingAdvances, isLoaded, deductionSelections]);
+
+  // Debug: log fetched advances
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      console.log(`📊 [PAYROLL DEBUG] Fetched advances: count=${pendingAdvances.length}`);
+      if (pendingAdvances.length > 0) {
+        pendingAdvances.forEach(a => {
+          console.log(`   → ${a.id}: emp=${a.employeeId}, amt=${a.amount}, status=${a.status}, deducted=${a.deducted}`);
+        });
+      } else {
+        console.log('   ❌ NO ADVANCES FOUND IN DATABASE');
+      }
+    }
+  }, [pendingAdvances]);
 
   const hasPayrollGenerated = payrollRecords.length > 0;
 
@@ -198,13 +277,18 @@ export default function PayrollPage() {
 
   // Group advances by employeeId
   const advancesByEmployee = useMemo(() => {
-    const map = new Map<string, AdvanceRequest[]>();
-    pendingAdvances.forEach(adv => {
-      const list = map.get(adv.employeeId) || [];
-      list.push(adv);
-      map.set(adv.employeeId, list);
-    });
-    return map;
+    const grouped = groupAdvancesByEmployee(pendingAdvances);
+    if (typeof window !== 'undefined' && grouped.size > 0) {
+      console.log('📊 [PAYROLL DEBUG] Advances grouped by employee:', {
+        mapSize: grouped.size,
+        entries: Array.from(grouped.entries()).map(([empId, advs]) => ({
+          employeeId: empId,
+          count: advs.length,
+          advances: advs.map(a => ({ id: a.id, amount: a.amount })),
+        })),
+      });
+    }
+    return grouped;
   }, [pendingAdvances]);
 
   // ---- TOGGLE EXPAND ----
@@ -230,42 +314,21 @@ export default function PayrollPage() {
     });
   }, []);
 
-  // ---- COMPUTE EMPLOYEE SUMMARIES (useMemo) ----
+  // ---- COMPUTE EMPLOYEE SUMMARIES (using domain engine) ----
 
   const employeeSummaries = useMemo((): EmployeeWeekSummary[] => {
-    const workerSiteMap = new Map<string, Map<string, { daysWorked: number; otHours: number }>>();
+    const entries = buildAttendanceEntries(weekAttendance, employeeMap);
+    const summaries = buildEmployeeSummaries(entries, employeeMap, siteNameMap, advancesByEmployee) as unknown as EmployeeWeekSummary[];
 
-    for (const record of weekAttendance) {
-      const emp = employeeMap.get(record.workerId);
-      if (!emp) continue;
-
-      const hasMorning = !!record.morningSite;
-      const hasEvening = !!record.eveningSite;
-      if (!hasMorning && !hasEvening) continue;
-
-      if (!workerSiteMap.has(record.workerId)) {
-        workerSiteMap.set(record.workerId, new Map());
-      }
-      const siteMap = workerSiteMap.get(record.workerId)!;
-
-      if (hasMorning) {
-        const site = siteMap.get(record.morningSite!) || { daysWorked: 0, otHours: 0 };
-        site.daysWorked += 0.5;
-        siteMap.set(record.morningSite!, site);
-      }
-      if (hasEvening) {
-        const site = siteMap.get(record.eveningSite!) || { daysWorked: 0, otHours: 0 };
-        site.daysWorked += 0.5;
-        siteMap.set(record.eveningSite!, site);
-      }
-      const otHours = record.otHours || 0;
-      if (otHours > 0) {
-        const otSiteId = record.eveningSite || record.morningSite;
-        if (otSiteId) {
-          const site = siteMap.get(otSiteId) || { daysWorked: 0, otHours: 0 };
-          site.otHours += otHours;
-          siteMap.set(otSiteId, site);
+    // DEBUG: Check what advances made it into summaries
+    if (typeof window !== 'undefined') {
+      const totalAdv = summaries.reduce((sum, e) => sum + e.advances.length, 0);
+      console.log(`📊 [EMPLOYEE SUMMARIES] Built ${summaries.length} summaries, total advances: ${totalAdv}`);
+      summaries.forEach(s => {
+        if (s.advances.length > 0) {
+          console.log(`   → ${s.employeeName}: ${s.advances.length} advances = ${s.advances.reduce((sum, a) => sum + a.amount, 0)} LKR`);
         }
+<<<<<<< HEAD
       }
     }
 
@@ -325,36 +388,34 @@ export default function PayrollPage() {
 
     return summaries.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
   }, [weekAttendance, driverAttendance, employeeMap, siteNameMap, advancesByEmployee]);
-
-  // ---- SITE TOTALS (useMemo) ----
-
-  const siteTotals = useMemo((): (SitePayrollTotal & { totalDays: number; totalOtHours: number })[] => {
-    const totalsMap = new Map<string, SitePayrollTotal & { totalDays: number; totalOtHours: number }>();
-
-    for (const emp of employeeSummaries) {
-      for (const sb of emp.siteBreakdowns) {
-        const existing = totalsMap.get(sb.siteId) || {
-          siteId: sb.siteId,
-          siteName: sb.siteName,
-          totalPayroll: 0,
-          workerCount: 0,
-          totalDays: 0,
-          totalOtHours: 0,
-        };
-        existing.totalPayroll += sb.totalPay;
-        existing.workerCount += 1;
-        existing.totalDays += sb.daysWorked;
-        existing.totalOtHours += sb.otHours;
-        totalsMap.set(sb.siteId, existing);
-      }
+=======
+      });
     }
 
-    return Array.from(totalsMap.values()).sort((a, b) => b.totalPayroll - a.totalPayroll);
+    return summaries;
+  }, [weekAttendance, employeeMap, siteNameMap, advancesByEmployee]);
+>>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
+
+  // ---- SITE TOTALS (using domain engine) ----
+
+  const siteTotals = useMemo(() => {
+    // buildSiteTotals already computes accurate totalDays and totalOtHours
+    // Don't recalculate - they're already correct and include all merged/deduplicated data
+    return buildSiteTotals(employeeSummaries);
   }, [employeeSummaries]);
 
-  // ---- GRAND TOTALS (useMemo) ----
+  // ---- SITE-WORKER SUMMARIES (for enhanced UI display) ----
+
+  const siteWorkerSummaries = useMemo(() => {
+    // Build site-worker breakdown for detailed summary display
+    // This is UI-only transformation - no payroll changes
+    return buildSiteWorkerSummaries(employeeSummaries);
+  }, [employeeSummaries]);
+
+  // ---- GRAND TOTALS (using domain engine) ----
 
   const grandTotals = useMemo(() => {
+<<<<<<< HEAD
     const totalWorkers = employeeSummaries.length;
     const totalDays = employeeSummaries.reduce((s, e) => s + e.daysWorked, 0);
     const totalOtHours = employeeSummaries.reduce((s, e) => s + e.otHours, 0);
@@ -367,31 +428,35 @@ export default function PayrollPage() {
         if (deductionSelections[adv.id] !== false) {
           advanceDeductions += adv.amount;
         }
+=======
+    const advanceDeductions = calculateSelectedAdvanceDeductions(employeeSummaries, deductionSelections);
+    if (typeof window !== 'undefined') {
+      const empWithAdv = employeeSummaries.filter(e => e.advances.length > 0);
+      const totalAdv = employeeSummaries.reduce((sum, e) => sum + e.advances.length, 0);
+      console.log(`📊 [GRAND TOTALS] employees with advances: ${empWithAdv.length}, total advances: ${totalAdv}, selected deduction: ${advanceDeductions} LKR`);
+      if (totalAdv > 0 && advanceDeductions === 0) {
+        console.log('   ⚠️ Advances exist but selected deduction is 0 - no advances marked for deduction');
+>>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
       }
     }
-
-    return {
-      totalWorkers,
-      totalDays,
-      totalOtHours,
-      grossPayroll,
-      advanceDeductions,
-      finalPayroll: grossPayroll - advanceDeductions,
-    };
+    return buildGrandTotals(employeeSummaries, advanceDeductions);
   }, [employeeSummaries, deductionSelections]);
 
   // ---- FILTER ----
 
   const filteredSummaries = employeeSummaries.filter(s =>
-    !searchQuery || s.employeeName.toLowerCase().includes(searchQuery.toLowerCase())
+    (!searchQuery || s.employeeName.toLowerCase().includes(searchQuery.toLowerCase())) &&
+    s.grossPay > 0  // Hide workers with zero payment
   );
   const filteredPayroll = payrollRecords.filter(r =>
-    !searchQuery || r.employeeName.toLowerCase().includes(searchQuery.toLowerCase())
+    (!searchQuery || r.employeeName.toLowerCase().includes(searchQuery.toLowerCase())) &&
+    r.netPay > 0  // Hide workers with zero payment
   );
 
   // ---- MUTATIONS ----
 
   const generateMutation = useMutation({
+<<<<<<< HEAD
     mutationFn: async () => {
       // Handle advance selections before generating payroll
       for (const emp of employeeSummaries) {
@@ -407,6 +472,23 @@ export default function PayrollPage() {
       }
       
       return generateWeeklyPayroll(weekStart, user?.uid || '');
+=======
+    mutationFn: () => {
+      const selectedAdvances = Object.entries(deductionSelections)
+        .filter(([_, isSelected]) => isSelected)
+        .map(([advanceId, _]) => advanceId);
+
+      // DEBUG: Log selected advances before generating
+      if (typeof window !== 'undefined') {
+        console.log(`🔥 [GENERATE PAYROLL] Selected advances for deduction:`, {
+          count: selectedAdvances.length,
+          ids: selectedAdvances,
+          deductionSelections
+        });
+      }
+
+      return generateWeeklyPayroll(weekStart, user?.uid || '', undefined, selectedAdvances);
+>>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
     },
     onSuccess: (data) => {
       toast({
@@ -414,6 +496,9 @@ export default function PayrollPage() {
         description: `Generated payroll for ${data.success} employees.${data.failed > 0 ? ` ${data.failed} failed.` : ''}`,
       });
       setShowPreview(false);
+      setDeductionSelections({}); // Clear selections after successful generation
+      const key = `payroll-deductions-${weekStartStr}`;
+      localStorage.removeItem(key); // Clear from storage
       queryClient.invalidateQueries({ queryKey: ['weekly-payroll'] });
     },
     onError: (error: any) => {
@@ -452,26 +537,28 @@ export default function PayrollPage() {
     <div className="space-y-6">
 
       {/* ========== SECTION 1: WEEK SELECTOR ========== */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Payroll</h1>
-          <p className="text-muted-foreground">
+      <div className="flex flex-col gap-3 sm:gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Payroll</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">
             Weekly salary tracking &mdash; Pay day every Saturday
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => navigateWeek('prev')}>
+        <div className="flex items-center gap-1 sm:gap-2 flex-wrap shrink-0">
+          <Button variant="outline" size="sm" onClick={() => navigateWeek('prev')} className="h-9 w-9 p-0 sm:h-10 sm:w-10">
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium">Week {weekNumber}</span>
-            <span className="text-sm text-muted-foreground">
-              ({formatDate(weekStart)} - {formatDate(saturday)})
+          <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-1 rounded-md border border-border bg-background px-2 sm:px-3 py-1.5 text-xs sm:text-sm">
+            <span className="font-medium flex items-center gap-0.5 sm:gap-1">
+              <Calendar className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+              Week {weekNumber}
+            </span>
+            <span className="text-xs text-muted-foreground line-clamp-2">
+              ({formatDate(weekStart, 'DATE_SHORT')} - {formatDate(weekEnd, 'DATE_SHORT')})
             </span>
           </div>
-          <Button variant="outline" size="sm" onClick={() => navigateWeek('next')}>
+          <Button variant="outline" size="sm" onClick={() => navigateWeek('next')} className="h-9 w-9 p-0 sm:h-10 sm:w-10">
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
@@ -479,57 +566,63 @@ export default function PayrollPage() {
 
       {/* Status + Actions Bar */}
       <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex flex-col gap-2 sm:gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
               <div className={cn(
-                'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium',
+                'inline-flex items-center gap-1.5 sm:gap-2 rounded-full border px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-medium',
                 hasPayrollGenerated
                   ? 'border-green-500/30 bg-green-500/10 text-green-500'
                   : 'border-blue-500/30 bg-blue-500/10 text-blue-500'
               )}>
                 {hasPayrollGenerated ? (
-                  <><CheckCircle className="h-4 w-4" /> Payroll Generated</>
+                  <><CheckCircle className="h-3 w-3 sm:h-4 sm:w-4" /> Payroll Generated</>
                 ) : (
-                  <><Clock className="h-4 w-4" /> Live Preview</>
+                  <><Clock className="h-3 w-3 sm:h-4 sm:w-4" /> Live Preview</>
                 )}
               </div>
-              <span className="text-sm text-muted-foreground">
-                {grandTotals.totalWorkers} workers &middot; {formatCurrency(grandTotals.grossPayroll)} gross
+              <span className="text-xs sm:text-sm text-muted-foreground">
+                {grandTotals.totalWorkers} workers
               </span>
             </div>
 
             {!hasPayrollGenerated && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2">
                 {!showPreview ? (
                   <Button
                     variant="outline"
-                    className="gap-2"
+                    className="gap-2 text-xs sm:text-sm"
+                    size="sm"
                     onClick={() => setShowPreview(true)}
                     disabled={employeeSummaries.length === 0}
                   >
-                    <Eye className="h-4 w-4" />
-                    Preview Payroll
+                    <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    <span className="hidden sm:inline">Preview Payroll</span>
+                    <span className="sm:hidden">Preview</span>
                   </Button>
                 ) : (
                   <>
                     <Button
                       variant="outline"
+                      size="sm"
+                      className="text-xs sm:text-sm"
                       onClick={() => setShowPreview(false)}
                     >
                       Cancel
                     </Button>
                     <Button
-                      className="gap-2"
+                      className="gap-2 text-xs sm:text-sm"
+                      size="sm"
                       onClick={() => generateMutation.mutate()}
                       disabled={generateMutation.isPending}
                     >
                       {generateMutation.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
                       ) : (
-                        <ShieldCheck className="h-4 w-4" />
+                        <ShieldCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                       )}
-                      Approve &amp; Generate Payroll
+                      <span className="hidden sm:inline">Approve &amp; Generate</span>
+                      <span className="sm:hidden">Generate</span>
                     </Button>
                   </>
                 )}
@@ -548,37 +641,18 @@ export default function PayrollPage() {
           {/* ========== SECTION 2: SITE SUMMARY CARDS ========== */}
           {siteTotals.length > 0 && (
             <div>
-              <h2 className="mb-3 text-lg font-semibold text-foreground">Site Summary</h2>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <h2 className="mb-2 sm:mb-3 text-base sm:text-lg font-semibold text-foreground">Site Summary</h2>
+              <div className="grid gap-2 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                 {siteTotals.map((st) => (
-                  <Card key={st.siteId}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Building2 className="h-5 w-5 text-primary" />
-                        <h3 className="font-semibold text-foreground">{st.siteName}</h3>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
-                        <div>
-                          <p className="text-muted-foreground">Workers</p>
-                          <p className="text-lg font-bold">{st.workerCount}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Days</p>
-                          <p className="text-lg font-bold">{st.totalDays}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">OT Hours</p>
-                          <p className="text-lg font-bold text-orange-500">
-                            {st.totalOtHours > 0 ? `${st.totalOtHours.toFixed(1)}h` : '—'}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Salary</p>
-                          <p className="text-lg font-bold text-green-500">{formatCurrency(st.totalPayroll)}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <SitePayrollCard
+                    key={st.siteId}
+                    siteId={st.siteId}
+                    siteName={st.siteName}
+                    workerCount={st.workerCount}
+                    totalDays={st.totalDays}
+                    totalOtHours={st.totalOtHours}
+                    totalPayroll={st.totalPayroll}
+                  />
                 ))}
               </div>
             </div>
@@ -586,17 +660,17 @@ export default function PayrollPage() {
 
           {/* ========== SECTION 3: WORKER PAYROLL CARDS ========== */}
           <div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
-              <h2 className="text-lg font-semibold text-foreground">
+            <div className="flex flex-col gap-2 sm:gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
+              <h2 className="text-base sm:text-lg font-semibold text-foreground">
                 {hasPayrollGenerated ? 'Payroll Records' : 'Worker Payroll'}
               </h2>
-              <div className="relative max-w-sm flex-1">
+              <div className="relative flex-1 sm:max-w-xs">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Search workers..."
+                  placeholder="Search..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
+                  className="pl-9 text-sm"
                 />
               </div>
             </div>
@@ -634,7 +708,7 @@ export default function PayrollPage() {
                   ) : (
                     <div className="divide-y divide-border/50">
                       {filteredSummaries.map((emp) => (
-                        <LiveWorkerCard
+                        <WorkerPayrollCard
                           key={emp.employeeId}
                           summary={emp}
                           isExpanded={expandedWorkers.has(emp.employeeId)}
@@ -653,42 +727,16 @@ export default function PayrollPage() {
 
           {/* ========== SECTION 4: PAYROLL SUMMARY ========== */}
           {grandTotals.totalWorkers > 0 && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <TrendingUp className="h-5 w-5 text-primary" />
-                  Payroll Summary
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-                  <div className="rounded-lg border border-border p-3 text-center">
-                    <p className="text-2xl font-bold">{grandTotals.totalWorkers}</p>
-                    <p className="text-sm text-muted-foreground">Workers</p>
-                  </div>
-                  <div className="rounded-lg border border-border p-3 text-center">
-                    <p className="text-2xl font-bold">{grandTotals.totalDays}</p>
-                    <p className="text-sm text-muted-foreground">Total Days</p>
-                  </div>
-                  <div className="rounded-lg border border-border p-3 text-center">
-                    <p className="text-2xl font-bold text-orange-500">{grandTotals.totalOtHours.toFixed(1)}h</p>
-                    <p className="text-sm text-muted-foreground">Total OT</p>
-                  </div>
-                  <div className="rounded-lg border border-border p-3 text-center">
-                    <p className="text-2xl font-bold text-blue-500">{formatCurrency(grandTotals.grossPayroll)}</p>
-                    <p className="text-sm text-muted-foreground">Gross Payroll</p>
-                  </div>
-                  <div className="rounded-lg border border-border p-3 text-center">
-                    <p className="text-2xl font-bold text-red-400">{formatCurrency(grandTotals.advanceDeductions)}</p>
-                    <p className="text-sm text-muted-foreground">Advance Deductions</p>
-                  </div>
-                  <div className="rounded-lg border-2 border-green-500/30 bg-green-500/5 p-3 text-center">
-                    <p className="text-2xl font-bold text-green-500">{formatCurrency(grandTotals.finalPayroll)}</p>
-                    <p className="text-sm text-muted-foreground">Final Payroll</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <PayrollSummary
+              totalWorkers={grandTotals.totalWorkers}
+              totalDays={grandTotals.totalDays}
+              totalOtHours={grandTotals.totalOtHours}
+              grossPayroll={grandTotals.grossPayroll}
+              advanceDeductions={grandTotals.advanceDeductions}
+              finalPayroll={grandTotals.finalPayroll}
+              siteTotals={siteTotals}
+              siteWorkerSummaries={siteWorkerSummaries}
+            />
           )}
         </>
       )}
@@ -696,6 +744,7 @@ export default function PayrollPage() {
   );
 }
 
+<<<<<<< HEAD
 // =====================================================
 // LIVE WORKER CARD — Collapsible
 // Collapsed: name, role, grand total
@@ -923,9 +972,11 @@ function LiveWorkerCard({
     </div>
   );
 }
+=======
+>>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
 
 // =====================================================
-// PAYROLL RECORD CARD (saved payroll — collapsible)
+// PAYROLL RECORD CARD (saved payroll - collapsible)
 // =====================================================
 
 function PayrollRecordCard({
@@ -1034,7 +1085,7 @@ function PayrollRecordCard({
                           {sb.otHours > 0 ? (
                             <span className="text-orange-500">{sb.otHours.toFixed(1)}h</span>
                           ) : (
-                            <span className="text-muted-foreground">—</span>
+                            <span className="text-muted-foreground">-</span>
                           )}
                         </td>
                         <td className="p-2.5 text-right font-medium">{formatCurrency(sb.totalPay)}</td>
@@ -1046,7 +1097,7 @@ function PayrollRecordCard({
                       <td className="p-2.5">Total</td>
                       <td className="p-2.5 text-center">{record.daysWorked}</td>
                       <td className="p-2.5 text-center">
-                        {record.overtimeHours > 0 ? `${record.overtimeHours.toFixed(1)}h` : '—'}
+                        {record.overtimeHours > 0 ? `${record.overtimeHours.toFixed(1)}h` : '-'}
                       </td>
                       <td className="p-2.5 text-right text-blue-500">
                         {formatCurrency(record.totalEarnings)}
@@ -1107,3 +1158,4 @@ function PayrollRecordCard({
     </div>
   );
 }
+

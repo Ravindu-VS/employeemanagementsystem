@@ -256,11 +256,11 @@ export default function LoansPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Loans</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Loans</h1>
           <p className="text-muted-foreground">
             Manage employee loans with EMI tracking
           </p>
@@ -272,35 +272,35 @@ export default function LoansPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-4">
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-yellow-500/20 p-2">
                 <Clock className="h-5 w-5 text-yellow-400" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Pending</p>
-                <p className="text-2xl font-bold">{stats?.pending || 0}</p>
+                <p className="text-xl sm:text-2xl font-bold">{stats?.pending || 0}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-green-500/20 p-2">
                 <TrendingUp className="h-5 w-5 text-green-400" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Active</p>
-                <p className="text-2xl font-bold">{stats?.active || 0}</p>
+                <p className="text-xl sm:text-2xl font-bold">{stats?.active || 0}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-blue-500/20 p-2">
                 <DollarSign className="h-5 w-5 text-blue-400" />
@@ -315,7 +315,7 @@ export default function LoansPage() {
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-orange-500/20 p-2">
                 <Receipt className="h-5 w-5 text-orange-400" />
@@ -333,8 +333,8 @@ export default function LoansPage() {
 
       {/* Search and Filters */}
       <Card className="bg-card/50">
-        <CardContent className="p-4">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -400,7 +400,7 @@ export default function LoansPage() {
                   className="p-4 transition-colors hover:bg-muted/30"
                 >
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3 sm:p-4">
                       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/20 font-medium text-primary">
                         {loan.employeeName.charAt(0).toUpperCase()}
                       </div>
@@ -439,7 +439,7 @@ export default function LoansPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3 sm:p-4">
                       <div className="text-right">
                         {loan.status === 'active' && (
                           <p className="text-lg font-bold text-orange-400">
@@ -647,7 +647,7 @@ export default function LoansPage() {
 
               {/* Loan Preview */}
               {loanPreview && (
-                <div className="rounded-lg border border-border bg-muted/50 p-4">
+                <div className="rounded-lg border border-border bg-muted/50 p-3 sm:p-4">
                   <p className="text-sm font-medium mb-3">Loan Summary</p>
                   <div className="grid grid-cols-3 gap-4 text-center">
                     <div>
@@ -716,7 +716,7 @@ export default function LoansPage() {
               <CardTitle>Loan Details - {selectedLoan.employeeName}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3 sm:p-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Principal Amount</p>
                   <p className="font-medium">{formatCurrency(selectedLoan.principalAmount)}</p>

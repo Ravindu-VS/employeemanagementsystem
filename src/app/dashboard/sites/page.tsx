@@ -167,17 +167,17 @@ export default function SitesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Work Sites</h1>
-          <p className="text-muted-foreground">
+      <div className="flex flex-col gap-3 sm:gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Work Sites</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">
             Manage construction sites and project locations
           </p>
         </div>
-        <Link href={ROUTES.SITES.CREATE}>
-          <Button className="gap-2">
+        <Link href={ROUTES.SITES.CREATE} className="w-full sm:w-auto">
+          <Button className="gap-2 w-full sm:w-auto">
             <Plus className="h-4 w-4" />
             Add Site
           </Button>
@@ -185,7 +185,7 @@ export default function SitesPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
         <Card className="bg-card/50">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -242,20 +242,21 @@ export default function SitesPage() {
 
       {/* Search and Filters */}
       <Card className="bg-card/50">
-        <CardContent className="p-4">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search sites by name, code, address..."
+                placeholder="Search sites..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
+                className="pl-9 text-sm"
               />
             </div>
             <Button
               variant="outline"
-              className="gap-2"
+              size="sm"
+              className="gap-2 w-full sm:w-auto"
               onClick={() => setShowFilters(!showFilters)}
             >
               <Filter className="h-4 w-4" />

@@ -1,7 +1,7 @@
 {
-  "name": "Construction Workforce Management System",
-  "short_name": "WorkforceMS",
-  "description": "Manage attendance, payroll, and workforce for construction sites",
+  "name": "KK & SONS Architectural Services EMS",
+  "short_name": "KK & SONS EMS",
+  "description": "Construction and workforce management platform for KK & SONS Architectural Services",
   "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#ffffff",

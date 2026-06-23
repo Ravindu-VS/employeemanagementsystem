@@ -72,11 +72,18 @@ export interface UserProfile extends User {
   departmentId?: string;
   supervisorId?: string;
   assignedSites: string[];
+<<<<<<< HEAD
   dailyRate: number;   // Per day payment
   otRate: number;      // OT hourly rate
   hourlyRate: number;  // Legacy / calculated
   weeklyRate: number;  // Legacy / calculated
   payType: PayType;    // How salary is calculated
+=======
+  dailyRate: number;   // Per day payment (REQUIRED)
+  otRate?: number;     // DEPRECATED: OT rate now derived as dailyRate / 8 at runtime
+  hourlyRate?: number; // Legacy / calculated
+  weeklyRate?: number; // Legacy / calculated
+>>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
   bankDetails?: BankDetails;
   documents: UserDocument[];
   metadata: UserMetadata;
@@ -226,14 +233,33 @@ export type SegmentStatus =
  * - OT hours (number)
  * A worker can work TWO different sites in the same day.
  */
+/**
+ * Supervisor visit record for multi-site tracking
+ */
+export interface SimpleSupervisorVisit {
+  siteId: string;
+  visited: boolean;
+  notes?: string;
+  visitedAt: string; // ISO timestamp
+}
+
 export interface SimpleAttendance {
   id: string;
   date: string; // YYYY-MM-DD
   workerId: string;
   workerName: string;
-  morningSite: string | null;  // siteId or null if absent
-  eveningSite: string | null;  // siteId or null if absent
-  otHours: number;             // overtime hours
+  role?: string; // NEW: role to determine attendance structure
+
+  // For LABOR WORKERS (bass, helper, draughtsman)
+  morningSite?: string | null;  // siteId or null if absent
+  eveningSite?: string | null;  // siteId or null if absent
+  siteOtHours?: Record<string, number>; // Record of siteId to OT hours
+
+  // For SUPERVISORS (owner, ceo, manager, supervisor)
+  // use siteVisits array instead of morning/evening
+  siteVisits?: SimpleSupervisorVisit[];
+
+  otHours?: number;             // overtime hours
   supervisorId: string;
   attendanceType: 'site' | 'driver';  // Type of attendance record
   role?: UserRole;             // Worker's role (for driver/supervisor logic)
@@ -377,7 +403,7 @@ export interface WorkerPayrollSummary {
   workerName: string;
   workerRole: UserRole;
   dailyRate: number;
-  otRate: number;
+  otRate: number;        // DERIVED: dailyRate / 8 (not stored)
   siteBreakdowns: SiteBreakdown[];
   totalDays: number;
   totalOtHours: number;
@@ -410,8 +436,49 @@ export interface PayrollReport {
 // ADVANCE & LOAN TYPES
 // =====================================================
 
+export interface Advance {
+  id: string;
+  workerId: string;
+  amount: number;
+  date: string;
+  reason: string;
+  deducted: boolean;
+  deductionWeek: string | null;
+  createdBy?: string;
+  createdAt?: Date;
+}
+
+export interface WorkerWeeklyPayroll {
+  workerId: string;
+  workerName: string;
+  role: string;
+  grossPay: number;
+  pendingAdvances: Advance[];
+  selectedAdvanceDeductions: Advance[];
+  advanceDeductionTotal: number;
+  loanDeduction: number;
+  finalPay: number;
+}
+
+export interface FinalPayrollSummary {
+  totalWorkers: number;
+  totalDaysWorked: number;
+  totalOtHours: number;
+  totalBasePay: number;
+  totalOtPay: number;
+  totalGrossPay: number;
+  totalAdvanceDeductions: number;
+  totalLoanDeductions: number;
+  finalPayrollTotal: number;
+}
+
 /**
  * Salary advance request
+ *
+ * Business Rules:
+ * - status: "pending" (awaiting approval) → "approved" (eligible) → "rejected" (hidden)
+ * - deducted: false (eligible for payroll) → true (already deducted, hidden from future weeks)
+ * - deductionWeek: which week it was deducted (audit trail)
  */
 /**
  * Advance status for carry-forward workflow
@@ -433,6 +500,7 @@ export interface AdvanceRequest {
   reviewedBy?: string;
   reviewedAt?: Date;
   reviewNotes?: string;
+<<<<<<< HEAD
   deductThisWeek: boolean;      // true = deduct from current payroll
   deductionWeek?: string;       // YYYY-MM-DD week for future deduction
   deductionWeekId?: string;     // Week when actually deducted (legacy)
@@ -440,6 +508,10 @@ export interface AdvanceRequest {
   isDeducted: boolean;
   carryForward: boolean;        // true = carried forward, not deducted
   advanceState?: AdvanceState;  // Current state in the carry-forward workflow
+=======
+  deducted: boolean;           // true = already deducted, hide from future weeks
+  deductionWeek: string | null; // ISO date when deducted (e.g. "2026-03-23")
+>>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
   createdAt: Date;
   updatedAt: Date;
 }

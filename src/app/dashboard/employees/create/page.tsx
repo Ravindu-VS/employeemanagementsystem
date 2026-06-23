@@ -13,9 +13,9 @@ import { useForm } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { 
-  ArrowLeft, 
-  Save, 
+import {
+  ArrowLeft,
+  Save,
   User,
   Mail,
   Phone,
@@ -39,6 +39,8 @@ import { secondaryAuth } from '@/lib/firebase/config';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { ROUTES, USER_ROLES } from '@/constants';
+import { calculateOtRate } from '@/domain/payroll';
+import { formatCurrency } from '@/lib/utils';
 import type { UserRole } from '@/types';
 
 // Form validation schema
@@ -51,7 +53,6 @@ const employeeSchema = z.object({
   address: z.string().optional(),
   employeeId: z.string().optional(),
   dailyRate: z.number().min(0, 'Daily rate must be positive'),
-  otRate: z.number().min(0, 'OT rate must be positive').optional(),
   joinDate: z.string().optional(),
   emergencyContact: z.object({
     name: z.string().optional(),
@@ -84,11 +85,12 @@ export default function CreateEmployeePage() {
     defaultValues: {
       role: 'helper',
       dailyRate: 0,
-      otRate: 0,
     },
   });
 
   const selectedRole = watch('role');
+  const dailyRate = watch('dailyRate');
+  const calculatedOtRate = calculateOtRate(dailyRate || 0);
 
   const onSubmit = async (data: EmployeeFormData) => {
     setIsSubmitting(true);
@@ -122,7 +124,6 @@ export default function CreateEmployeePage() {
         phone: data.phone || '',
         address: data.address,
         dailyRate: data.dailyRate,
-        otRate: data.otRate || data.dailyRate * 1.5,
         hourlyRate: 0,
         weeklyRate: 0,
         joiningDate: data.joinDate ? new Date(data.joinDate) : new Date(),
@@ -315,29 +316,27 @@ export default function CreateEmployeePage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="dailyRate" required>Daily Rate (LKR)</Label>
-                  <Input
-                    id="dailyRate"
-                    type="number"
-                    placeholder="2500"
-                    icon={<DollarSign className="h-4 w-4" />}
-                    {...register('dailyRate', { valueAsNumber: true })}
-                    error={errors.dailyRate?.message}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="otRate">OT Rate (LKR)</Label>
-                  <Input
-                    id="otRate"
-                    type="number"
-                    placeholder="Auto: 1.5x daily rate"
-                    icon={<DollarSign className="h-4 w-4" />}
-                    {...register('otRate', { valueAsNumber: true })}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Leave empty for 1.5x daily rate
+              <div className="space-y-2">
+                <Label htmlFor="dailyRate" required>Daily Rate (LKR)</Label>
+                <Input
+                  id="dailyRate"
+                  type="number"
+                  placeholder="2500"
+                  icon={<DollarSign className="h-4 w-4" />}
+                  {...register('dailyRate', { valueAsNumber: true })}
+                  error={errors.dailyRate?.message}
+                />
+              </div>
+
+              {/* Auto-calculated OT Rate Display */}
+              <div className="space-y-2">
+                <Label>OT Rate (Auto-calculated)</Label>
+                <div className="rounded-md border border-border bg-muted/50 px-4 py-3 text-sm">
+                  <p className="font-medium text-foreground">
+                    {formatCurrency(calculatedOtRate)} / hour
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Calculated as: Daily Rate ÷ 8 hours
                   </p>
                 </div>
               </div>
