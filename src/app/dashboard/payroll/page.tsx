@@ -328,7 +328,7 @@ export default function PayrollPage() {
         if (s.advances.length > 0) {
           console.log(`   → ${s.employeeName}: ${s.advances.length} advances = ${s.advances.reduce((sum, a) => sum + a.amount, 0)} LKR`);
         }
-      }
+      });
     }
 
     // Add driver attendance
@@ -338,52 +338,52 @@ export default function PayrollPage() {
       const emp = employeeMap.get(record.workerId);
       if (!emp) continue;
 
-      if (!workerSiteMap.has(record.workerId)) {
-        workerSiteMap.set(record.workerId, new Map());
+      // Find if this driver already has a summary
+      let summary = summaries.find(s => s.employeeId === record.workerId);
+      
+      if (!summary) {
+        summary = {
+          employeeId: emp.uid,
+          employeeName: emp.displayName || emp.email,
+          employeeRole: emp.role,
+          daysWorked: 0,
+          otHours: 0,
+          grossPay: 0,
+          dailyRate: emp.dailyRate || 0,
+          otRate: emp.otRate || 0,
+          siteBreakdowns: [],
+          advances: advancesByEmployee.get(emp.uid) || [],
+        };
+        summaries.push(summary);
       }
-      const siteMap = workerSiteMap.get(record.workerId)!;
 
-      const site = siteMap.get('transportation') || { daysWorked: 0, otHours: 0 };
+      // Find transportation site
+      let site = summary.siteBreakdowns.find(sb => sb.siteId === 'transportation');
+      if (!site) {
+        site = {
+          siteId: 'transportation',
+          siteName: 'Transportation Duties',
+          daysWorked: 0,
+          otHours: 0,
+          regularPay: 0,
+          otPay: 0,
+          totalPay: 0,
+        };
+        summary.siteBreakdowns.push(site);
+      }
+
       site.daysWorked += 1;
       site.otHours += (record.otHours || 0);
-      siteMap.set('transportation', site);
+      site.regularPay = site.daysWorked * summary.dailyRate;
+      site.otPay = site.otHours * summary.otRate;
+      site.totalPay = site.regularPay + site.otPay;
+
+      // Update total summary
+      summary.daysWorked = summary.siteBreakdowns.reduce((s, b) => s + b.daysWorked, 0);
+      summary.otHours = summary.siteBreakdowns.reduce((s, b) => s + b.otHours, 0);
+      summary.grossPay = summary.siteBreakdowns.reduce((s, b) => s + b.totalPay, 0);
     }
 
-    const summaries: EmployeeWeekSummary[] = [];
-    for (const [workerId, siteMap] of workerSiteMap) {
-      const emp = employeeMap.get(workerId);
-      if (!emp) continue;
-
-      const dailyRate = emp.dailyRate || 0;
-      const otRate = emp.otRate || 0;
-
-      const siteBreakdowns: SiteBreakdown[] = Array.from(siteMap.entries()).map(
-        ([siteId, data]) => ({
-          siteId,
-          siteName: siteNameMap.get(siteId) || siteId,
-          daysWorked: data.daysWorked,
-          otHours: data.otHours,
-          regularPay: data.daysWorked * dailyRate,
-          otPay: data.otHours * otRate,
-          totalPay: data.daysWorked * dailyRate + data.otHours * otRate,
-        })
-      );
-
-      const empAdvances = advancesByEmployee.get(emp.uid) || [];
-
-      summaries.push({
-        employeeId: emp.uid,
-        employeeName: emp.displayName || emp.email,
-        employeeRole: emp.role,
-        daysWorked: siteBreakdowns.reduce((s, b) => s + b.daysWorked, 0),
-        otHours: siteBreakdowns.reduce((s, b) => s + b.otHours, 0),
-        grossPay: siteBreakdowns.reduce((s, b) => s + b.totalPay, 0),
-        dailyRate,
-        otRate,
-        siteBreakdowns,
-        advances: empAdvances,
-      });
-    }
     return summaries.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
   }, [weekAttendance, driverAttendance, employeeMap, siteNameMap, advancesByEmployee]);
 
