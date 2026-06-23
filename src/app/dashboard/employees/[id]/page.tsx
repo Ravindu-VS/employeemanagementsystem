@@ -1,13 +1,9 @@
-import EmployeeDetailPage from './employee-detail';
 
-<<<<<<< HEAD
+
 export function generateStaticParams() {
   return [];
 }
 
-export default function Page() {
-  return <EmployeeDetailPage />;
-=======
 /**
  * =====================================================
  * EMPLOYEE DETAIL PAGE
@@ -582,5 +578,4 @@ export default function EmployeeDetailPage() {
       </div>
     </div>
   );
->>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
 }

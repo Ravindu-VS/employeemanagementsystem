@@ -1,4 +1,4 @@
-﻿/**
+/**
  * =====================================================
  * ADVANCE SERVICE - COMPLETE REBUILD
  * =====================================================
@@ -194,15 +194,11 @@ export async function createAdvanceRequest(
       ? new Date(data.requestedAt + 'T12:00:00')
       : new Date(),
     status: 'pending',
-<<<<<<< HEAD
     deductThisWeek: data.deductThisWeek ?? true,
-    deductionWeek: data.deductionWeek,
+    deductionWeek: data.deductionWeek || null,
     isDeducted: false,
     carryForward: false,
-=======
     deducted: false,
-    deductionWeek: null,
->>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
   };
 
   return createDocument<AdvanceRequest>(COLLECTIONS.ADVANCES, advanceData as any);
@@ -327,12 +323,12 @@ export async function markAdvanceDeducted(
 
   // Update to new field names
   await updateDocument<AdvanceRequest>(COLLECTIONS.ADVANCES, advanceId, {
-<<<<<<< HEAD
     isDeducted: true,
-    deductionWeekId: payrollWeekId,
-    deductedWeek: payrollWeekId,
+    deductionWeekId: weekStartDate,
+    deductedWeek: weekStartDate,
     carryForward: false,
     advanceState: 'fully_deducted',
+    deducted: true,
   });
 }
 
@@ -346,10 +342,6 @@ export async function markAdvanceCarriedForward(
     carryForward: true,
     deductThisWeek: false,
     advanceState: 'carried_forward',
-=======
-    deducted: true,
-    deductionWeek: weekStartDate,
->>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
   });
 }
 
@@ -426,16 +418,7 @@ export async function checkDuplicatePendingAdvance(employeeId: string): Promise<
     where('employeeId', '==', employeeId),
     where('status', '==', 'pending'),
   ]);
-<<<<<<< HEAD
-
-  // Only return advances that are explicitly marked for deduction this week
-  // Carried-forward advances are NOT auto-deducted
-  return undeducted.filter(
-    (adv) => (adv.deductThisWeek === true && adv.carryForward !== true) || adv.deductionWeek === weekId
-  );
-=======
   return docs.length > 0;
->>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
 }
 
 /**

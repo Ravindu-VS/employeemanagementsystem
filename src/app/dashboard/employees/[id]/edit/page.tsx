@@ -1,13 +1,7 @@
-import EditEmployeePage from './edit-employee';
-
-<<<<<<< HEAD
 export function generateStaticParams() {
   return [];
 }
 
-export default function Page() {
-  return <EditEmployeePage />;
-=======
 /**
  * =====================================================
  * EDIT EMPLOYEE PAGE
@@ -464,5 +458,4 @@ export default function EditEmployeePage() {
       </form>
     </div>
   );
->>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
 }

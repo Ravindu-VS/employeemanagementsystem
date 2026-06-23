@@ -72,18 +72,11 @@ export interface UserProfile extends User {
   departmentId?: string;
   supervisorId?: string;
   assignedSites: string[];
-<<<<<<< HEAD
   dailyRate: number;   // Per day payment
   otRate: number;      // OT hourly rate
   hourlyRate: number;  // Legacy / calculated
   weeklyRate: number;  // Legacy / calculated
   payType: PayType;    // How salary is calculated
-=======
-  dailyRate: number;   // Per day payment (REQUIRED)
-  otRate?: number;     // DEPRECATED: OT rate now derived as dailyRate / 8 at runtime
-  hourlyRate?: number; // Legacy / calculated
-  weeklyRate?: number; // Legacy / calculated
->>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
   bankDetails?: BankDetails;
   documents: UserDocument[];
   metadata: UserMetadata;
@@ -500,7 +493,6 @@ export interface AdvanceRequest {
   reviewedBy?: string;
   reviewedAt?: Date;
   reviewNotes?: string;
-<<<<<<< HEAD
   deductThisWeek: boolean;      // true = deduct from current payroll
   deductionWeek?: string;       // YYYY-MM-DD week for future deduction
   deductionWeekId?: string;     // Week when actually deducted (legacy)
@@ -508,10 +500,6 @@ export interface AdvanceRequest {
   isDeducted: boolean;
   carryForward: boolean;        // true = carried forward, not deducted
   advanceState?: AdvanceState;  // Current state in the carry-forward workflow
-=======
-  deducted: boolean;           // true = already deducted, hide from future weeks
-  deductionWeek: string | null; // ISO date when deducted (e.g. "2026-03-23")
->>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
   createdAt: Date;
   updatedAt: Date;
 }

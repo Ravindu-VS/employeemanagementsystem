@@ -616,7 +616,6 @@ export async function bulkMarkSimpleAttendance(
 
   for (const entry of entries) {
     try {
-<<<<<<< HEAD
       const isMultiSite = ['owner', 'ceo', 'manager', 'supervisor'].includes(entry.role);
       const workerRecords = recordsByWorker.get(entry.workerId) || [];
       
@@ -637,10 +636,6 @@ export async function bulkMarkSimpleAttendance(
         // Regular worker: use their one and only record
         existing = workerRecords[0];
       }
-=======
-      const existing = existingMap.get(entry.workerId);
-      const workerRole = workerRoles?.[entry.workerId];
->>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
 
       // =====================================================
       // CRITICAL FIX: Explicit absence clearing

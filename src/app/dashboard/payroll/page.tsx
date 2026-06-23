@@ -328,7 +328,6 @@ export default function PayrollPage() {
         if (s.advances.length > 0) {
           console.log(`   → ${s.employeeName}: ${s.advances.length} advances = ${s.advances.reduce((sum, a) => sum + a.amount, 0)} LKR`);
         }
-<<<<<<< HEAD
       }
     }
 
@@ -385,16 +384,8 @@ export default function PayrollPage() {
         advances: empAdvances,
       });
     }
-
     return summaries.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
   }, [weekAttendance, driverAttendance, employeeMap, siteNameMap, advancesByEmployee]);
-=======
-      });
-    }
-
-    return summaries;
-  }, [weekAttendance, employeeMap, siteNameMap, advancesByEmployee]);
->>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
 
   // ---- SITE TOTALS (using domain engine) ----
 
@@ -415,7 +406,6 @@ export default function PayrollPage() {
   // ---- GRAND TOTALS (using domain engine) ----
 
   const grandTotals = useMemo(() => {
-<<<<<<< HEAD
     const totalWorkers = employeeSummaries.length;
     const totalDays = employeeSummaries.reduce((s, e) => s + e.daysWorked, 0);
     const totalOtHours = employeeSummaries.reduce((s, e) => s + e.otHours, 0);
@@ -428,15 +418,6 @@ export default function PayrollPage() {
         if (deductionSelections[adv.id] !== false) {
           advanceDeductions += adv.amount;
         }
-=======
-    const advanceDeductions = calculateSelectedAdvanceDeductions(employeeSummaries, deductionSelections);
-    if (typeof window !== 'undefined') {
-      const empWithAdv = employeeSummaries.filter(e => e.advances.length > 0);
-      const totalAdv = employeeSummaries.reduce((sum, e) => sum + e.advances.length, 0);
-      console.log(`📊 [GRAND TOTALS] employees with advances: ${empWithAdv.length}, total advances: ${totalAdv}, selected deduction: ${advanceDeductions} LKR`);
-      if (totalAdv > 0 && advanceDeductions === 0) {
-        console.log('   ⚠️ Advances exist but selected deduction is 0 - no advances marked for deduction');
->>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
       }
     }
     return buildGrandTotals(employeeSummaries, advanceDeductions);
@@ -456,7 +437,6 @@ export default function PayrollPage() {
   // ---- MUTATIONS ----
 
   const generateMutation = useMutation({
-<<<<<<< HEAD
     mutationFn: async () => {
       // Handle advance selections before generating payroll
       for (const emp of employeeSummaries) {
@@ -472,23 +452,6 @@ export default function PayrollPage() {
       }
       
       return generateWeeklyPayroll(weekStart, user?.uid || '');
-=======
-    mutationFn: () => {
-      const selectedAdvances = Object.entries(deductionSelections)
-        .filter(([_, isSelected]) => isSelected)
-        .map(([advanceId, _]) => advanceId);
-
-      // DEBUG: Log selected advances before generating
-      if (typeof window !== 'undefined') {
-        console.log(`🔥 [GENERATE PAYROLL] Selected advances for deduction:`, {
-          count: selectedAdvances.length,
-          ids: selectedAdvances,
-          deductionSelections
-        });
-      }
-
-      return generateWeeklyPayroll(weekStart, user?.uid || '', undefined, selectedAdvances);
->>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
     },
     onSuccess: (data) => {
       toast({
@@ -744,7 +707,7 @@ export default function PayrollPage() {
   );
 }
 
-<<<<<<< HEAD
+
 // =====================================================
 // LIVE WORKER CARD — Collapsible
 // Collapsed: name, role, grand total

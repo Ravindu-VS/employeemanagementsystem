@@ -27,20 +27,12 @@ import {
 import { calculateOtRate, calculateOtPay, calculateBasePay, calculatePayrollBreakdown } from "@/domain/payroll";
 import { getWorkerWeeklyAttendanceSummary, getWorkerWeeklyAttendanceBySite } from './attendance-service';
 import { getEmployee } from './employee-service';
-<<<<<<< HEAD
-import { getAdvancesForPayrollWeek } from './advance-service';
-import { getActiveSites } from './site-service';
+import { getAdvancesForPayrollWeek, getPendingAdvancesByWorkerIds, markAdvanceDeducted } from './advance-service';
+import { getActiveSites, getAllSites } from './site-service';
 import { getDriverAttendanceForDateRange } from './attendance-service';
 import type { 
   WeeklyPayroll, 
-  PayrollStatus, 
-=======
-import { getPendingAdvancesByWorkerIds, markAdvanceDeducted } from './advance-service';
-import { getActiveSites, getAllSites } from './site-service';
-import type {
-  WeeklyPayroll,
   PayrollStatus,
->>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
   PaymentMethod,
   BonusEntry,
   AdvanceDeduction,
@@ -291,7 +283,6 @@ export async function generateEmployeePayroll(
   // DOMAIN ENGINE: Calculate per-site breakdown
   // ========================================
   const dailyRate = employee.dailyRate || 0;
-<<<<<<< HEAD
   const otRate = employee.otRate || 0;
   
   let siteBreakdowns: SiteBreakdown[] = [];
@@ -342,21 +333,6 @@ export async function generateEmployeePayroll(
   
   const regularHours = daysWorked * 8;
   const totalHours = regularHours + overtimeHours;
-  
-=======
-  const siteBreakdowns: SiteBreakdown[] = Object.entries(siteAttendance).map(
-    ([siteId, data]) => {
-      return calculateSiteBreakdown(
-        siteId,
-        siteNameMap.get(siteId) || `Site ${siteId.substring(0, 6)}`,
-        data.daysWorked,
-        data.otHours,
-        dailyRate
-      ) as unknown as SiteBreakdown;
-    }
-  );
-
->>>>>>> f06b755f13b1dba44c7925ea9b8c716896b75c0f
   // Get advance deductions for this week
   const allPendingAdvances = await getPendingAdvancesByWorkerIds([workerId]);
   const weekAdvances = allPendingAdvances.filter(a => selectedAdvanceIds.includes(a.id));
