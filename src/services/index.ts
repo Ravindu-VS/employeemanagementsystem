@@ -52,12 +52,18 @@ export {
   // Simplified attendance (supervisor marking)
   getSimpleAttendance,
   getWorkerSimpleAttendance,
+  getWorkerAllSimpleAttendance,
   markSimpleAttendance,
   bulkMarkSimpleAttendance,
   getWorkerWeeklyAttendanceSummary,
   getWorkerWeeklyAttendanceBySite,
   getDailySimpleAttendance,
   getSimpleAttendanceForDateRange,
+  // Driver attendance
+  markDriverAttendance,
+  bulkMarkDriverAttendance,
+  getDriverAttendance,
+  getDriverAttendanceForDateRange,
 } from './attendance-service';
 
 // Payroll Service
@@ -85,9 +91,13 @@ export {
   rejectAdvance,
   cancelAdvance,
   markAdvanceDeducted,
+  markAdvanceCarriedForward,
   getUndeductedAdvances,
   getAdvancesForPayrollWeek,
   getAllPendingAdvances,
+  getCarriedForwardAdvances,
+  getDeductedAdvances,
+  resetCarryForwardForWeek,
 } from './advance-service';
 
 // Loan Service

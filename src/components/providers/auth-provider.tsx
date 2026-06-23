@@ -20,6 +20,8 @@ interface AuthContextType {
   status: AuthStatus;
   isAdmin: boolean;
   isSupervisor: boolean;
+  isDriver: boolean;
+  isPendingApproval: boolean;
 }
 
 const AuthContext = React.createContext<AuthContextType | undefined>(undefined);
@@ -53,12 +55,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Derived state
   const isAdmin = React.useMemo(() => {
     if (!profile) return false;
-    return ['owner', 'ceo', 'manager'].includes(profile.role);
+    return ['owner', 'ceo', 'manager'].includes(profile.role as string);
   }, [profile]);
 
   const isSupervisor = React.useMemo(() => {
     if (!profile) return false;
     return profile.role === 'supervisor';
+  }, [profile]);
+
+  const isDriver = React.useMemo(() => {
+    if (!profile) return false;
+    return profile.role === 'driver';
+  }, [profile]);
+
+  const isPendingApproval = React.useMemo(() => {
+    if (!profile) return false;
+    return profile.approved === false || profile.status === 'pending';
   }, [profile]);
 
   // Subscribe to auth state changes
@@ -88,6 +100,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
           const userProfile = await fetchProfileWithRetry();
           
           if (userProfile) {
+            // Check if user account is approved
+            if (userProfile.approved === false || userProfile.status === 'pending') {
+              // User exists but is not approved — keep them signed in
+              // but set profile so we can show the pending page
+              setProfile(userProfile);
+              setStatus('authenticated');
+              return;
+            }
+            
             if (!userProfile.isActive) {
               // User account is deactivated
               await auth.signOut();
@@ -150,8 +171,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       status,
       isAdmin,
       isSupervisor,
+      isDriver,
+      isPendingApproval,
     }),
-    [user, profile, status, isAdmin, isSupervisor]
+    [user, profile, status, isAdmin, isSupervisor, isDriver, isPendingApproval]
   );
 
   return (
@@ -200,13 +223,13 @@ export function useRequireRole(requiredRoles: string[]) {
 
   React.useEffect(() => {
     if (status === 'authenticated' && profile) {
-      if (!requiredRoles.includes(profile.role)) {
+      if (profile.role && !requiredRoles.includes(profile.role)) {
         router.push(ROUTES.DASHBOARD);
       }
     }
   }, [profile, status, requiredRoles, router]);
 
-  const hasAccess = profile ? requiredRoles.includes(profile.role) : false;
+  const hasAccess = profile?.role ? requiredRoles.includes(profile.role) : false;
 
   return { hasAccess, isAuthorized: hasAccess, isLoading: status === 'loading', user, profile };
 }

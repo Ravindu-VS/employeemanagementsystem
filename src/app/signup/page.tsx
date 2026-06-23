@@ -15,40 +15,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
-import { ROUTES, COLLECTIONS, ROLE_OPTIONS } from '@/constants';
-import { Building2, Mail, Lock, User, Phone, Loader2, ArrowLeft, ShieldCheck, Briefcase, MapPin, CreditCard, Users } from 'lucide-react';
+import { ROUTES, COLLECTIONS } from '@/constants';
+import { Building2, Mail, Lock, User, Phone, Loader2, ArrowLeft, ShieldCheck } from 'lucide-react';
 
-// Role icons mapping
-const roleIcons: Record<string, React.ReactNode> = {
-  owner: <ShieldCheck className="h-5 w-5" />,
-  ceo: <Briefcase className="h-5 w-5" />,
-  manager: <Users className="h-5 w-5" />,
-  supervisor: <MapPin className="h-5 w-5" />,
-  draughtsman: <Briefcase className="h-5 w-5" />,
-  bass: <Users className="h-5 w-5" />,
-  helper: <Users className="h-5 w-5" />,
-};
-
-// Role descriptions
-const roleDescriptions: Record<string, string> = {
-  owner: 'Full system access and control',
-  ceo: 'Executive access to all features',
-  manager: 'Manage employees, sites, and payroll',
-  supervisor: 'Supervise sites and track attendance',
-  draughtsman: 'Technical drawing and design work',
-  bass: 'Team lead for construction work',
-  helper: 'General construction assistance',
-};
-
-// Validation schema
+// Validation schema — NO role field
 const signupSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
   phone: z.string().min(10, 'Phone number must be at least 10 digits'),
-  role: z.enum(['owner', 'ceo', 'manager', 'supervisor', 'draughtsman', 'bass', 'helper'] as const),
-  nic: z.string().optional(),
-  address: z.string().optional(),
-  emergencyContact: z.string().optional(),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
@@ -64,7 +38,6 @@ export default function SignupPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isFirstUser, setIsFirstUser] = useState<boolean | null>(null);
-  const [step, setStep] = useState(1); // Multi-step form
 
   const form = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
@@ -72,10 +45,6 @@ export default function SignupPage() {
       name: '',
       email: '',
       phone: '',
-      role: 'helper',
-      nic: '',
-      address: '',
-      emergencyContact: '',
       password: '',
       confirmPassword: '',
     },
@@ -88,17 +57,13 @@ export default function SignupPage() {
         const usersQuery = query(collection(db, COLLECTIONS.USERS), limit(1));
         const snapshot = await getDocs(usersQuery);
         setIsFirstUser(snapshot.empty);
-        // If first user, set role to owner
-        if (snapshot.empty) {
-          form.setValue('role', 'owner');
-        }
       } catch (error) {
         console.error('Error checking users:', error);
         setIsFirstUser(false);
       }
     };
     checkFirstUser();
-  }, [form]);
+  }, []);
 
   // Handle Google Sign-Up
   const handleGoogleSignUp = async () => {
@@ -117,7 +82,7 @@ export default function SignupPage() {
         } else {
           toast({
             title: "Account Created",
-            description: "Your account is pending approval. Please wait for admin confirmation.",
+            description: "Your account is awaiting approval from an administrator.",
           });
           router.push(ROUTES.LOGIN);
         }
@@ -132,7 +97,7 @@ export default function SignupPage() {
         } else {
           toast({
             title: "Account Pending",
-            description: "Your account is pending approval.",
+            description: "Your account is awaiting approval from an administrator.",
             variant: "destructive",
           });
         }
@@ -167,12 +132,8 @@ export default function SignupPage() {
         displayName: data.name,
       });
 
-      // Determine role - first user is always owner
-      const finalRole = isFirstUser ? 'owner' : data.role;
-      
-      // Determine status - admin roles are active, field workers need approval
-      const needsApproval = ['draughtsman', 'bass', 'helper'].includes(data.role);
-      const isActive = isFirstUser || !needsApproval;
+      // First user is always owner with full access
+      const isOwner = isFirstUser === true;
 
       // Create user document in Firestore
       await setDoc(doc(db, COLLECTIONS.USERS, user.uid), {
@@ -181,13 +142,16 @@ export default function SignupPage() {
         displayName: data.name,
         photoURL: null,
         phone: data.phone,
-        role: finalRole,
-        nic: data.nic || null,
-        address: data.address || null,
-        emergencyContact: data.emergencyContact || null,
-        isActive: isActive,
+        // First user = owner, everyone else = null (pending assignment)
+        role: isOwner ? 'owner' : null,
+        status: isOwner ? 'active' : 'pending',
+        approved: isOwner ? true : false,
+        isActive: isOwner ? true : false,
+        payType: 'site_based',
         joiningDate: new Date(),
         assignedSites: [],
+        dailyRate: 0,
+        otRate: 0,
         hourlyRate: 0,
         weeklyRate: 0,
         documents: [],
@@ -202,11 +166,9 @@ export default function SignupPage() {
 
       toast({
         title: 'Account Created!',
-        description: isFirstUser 
+        description: isOwner 
           ? 'Welcome! You are now the owner of this system.'
-          : needsApproval 
-            ? 'Your account is pending approval. Please wait for admin confirmation.'
-            : 'Your account has been created. You can now sign in.',
+          : 'Your account is awaiting approval from an administrator.',
       });
 
       // Redirect to login
@@ -260,7 +222,7 @@ export default function SignupPage() {
                   You will be the system owner
                 </span>
               ) : (
-                `Step ${step} of 2 - ${step === 1 ? 'Basic Information' : 'Role & Password'}`
+                'Enter your details to create an account'
               )}
             </CardDescription>
           </CardHeader>
@@ -318,265 +280,147 @@ export default function SignupPage() {
             </div>
 
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              {step === 1 && (
-                <>
-                  {/* Name */}
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Full Name *</Label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="name"
-                        placeholder="John Doe"
-                        className="pl-9"
-                        disabled={isLoading}
-                        {...form.register('name')}
-                      />
+              {/* Name */}
+              <div className="space-y-2">
+                <Label htmlFor="name">Full Name *</Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="name"
+                    placeholder="John Doe"
+                    className="pl-9"
+                    disabled={isLoading}
+                    {...form.register('name')}
+                  />
+                </div>
+                {form.formState.errors.name && (
+                  <p className="text-sm text-destructive">
+                    {form.formState.errors.name.message}
+                  </p>
+                )}
+              </div>
+
+              {/* Email */}
+              <div className="space-y-2">
+                <Label htmlFor="email">Email *</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="you@company.com"
+                    className="pl-9"
+                    disabled={isLoading}
+                    {...form.register('email')}
+                  />
+                </div>
+                {form.formState.errors.email && (
+                  <p className="text-sm text-destructive">
+                    {form.formState.errors.email.message}
+                  </p>
+                )}
+              </div>
+
+              {/* Phone */}
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone Number *</Label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="phone"
+                    placeholder="+94 77 123 4567"
+                    className="pl-9"
+                    disabled={isLoading}
+                    {...form.register('phone')}
+                  />
+                </div>
+                {form.formState.errors.phone && (
+                  <p className="text-sm text-destructive">
+                    {form.formState.errors.phone.message}
+                  </p>
+                )}
+              </div>
+
+              {/* First user - Owner role */}
+              {isFirstUser && (
+                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-primary rounded-full">
+                      <ShieldCheck className="h-5 w-5 text-primary-foreground" />
                     </div>
-                    {form.formState.errors.name && (
-                      <p className="text-sm text-destructive">
-                        {form.formState.errors.name.message}
+                    <div>
+                      <p className="font-medium text-primary">Owner Account</p>
+                      <p className="text-sm text-muted-foreground">
+                        As the first user, you&apos;ll have full system access
                       </p>
-                    )}
-                  </div>
-
-                  {/* Email */}
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email *</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="you@company.com"
-                        className="pl-9"
-                        disabled={isLoading}
-                        {...form.register('email')}
-                      />
-                    </div>
-                    {form.formState.errors.email && (
-                      <p className="text-sm text-destructive">
-                        {form.formState.errors.email.message}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Phone */}
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone Number *</Label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="phone"
-                        placeholder="+94 77 123 4567"
-                        className="pl-9"
-                        disabled={isLoading}
-                        {...form.register('phone')}
-                      />
-                    </div>
-                    {form.formState.errors.phone && (
-                      <p className="text-sm text-destructive">
-                        {form.formState.errors.phone.message}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* NIC */}
-                  <div className="space-y-2">
-                    <Label htmlFor="nic">NIC Number (Optional)</Label>
-                    <div className="relative">
-                      <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="nic"
-                        placeholder="123456789V"
-                        className="pl-9"
-                        disabled={isLoading}
-                        {...form.register('nic')}
-                      />
                     </div>
                   </div>
-
-                  {/* Address */}
-                  <div className="space-y-2">
-                    <Label htmlFor="address">Address (Optional)</Label>
-                    <div className="relative">
-                      <MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <textarea
-                        id="address"
-                        placeholder="Your address"
-                        className="flex min-h-[80px] w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={isLoading}
-                        {...form.register('address')}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Next Button */}
-                  <Button 
-                    type="button" 
-                    className="w-full" 
-                    onClick={async () => {
-                      const isValid = await form.trigger(['name', 'email', 'phone']);
-                      if (isValid) setStep(2);
-                    }}
-                  >
-                    Next Step
-                  </Button>
-                </>
+                </div>
               )}
 
-              {step === 2 && (
-                <>
-                  {/* Role Selection - Only show if not first user */}
-                  {!isFirstUser && (
-                    <div className="space-y-3">
-                      <Label>Select Your Role *</Label>
-                      <div className="grid grid-cols-1 gap-2">
-                        {ROLE_OPTIONS.filter(r => r.value !== 'owner').map((role) => {
-                          const isSelected = form.watch('role') === role.value;
-                          return (
-                            <div
-                              key={role.value}
-                              onClick={() => form.setValue('role', role.value as any)}
-                              className={`
-                                flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all
-                                ${isSelected 
-                                  ? 'border-primary bg-primary/10' 
-                                  : 'border-border hover:border-primary/50'
-                                }
-                              `}
-                            >
-                              <div className={`
-                                p-2 rounded-full
-                                ${isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted'}
-                              `}>
-                                {roleIcons[role.value] || <User className="h-5 w-5" />}
-                              </div>
-                              <div className="flex-1">
-                                <p className="font-medium">{role.label}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {roleDescriptions[role.value]}
-                                </p>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {form.formState.errors.role && (
-                        <p className="text-sm text-destructive">
-                          {form.formState.errors.role.message}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* First user - Owner role */}
-                  {isFirstUser && (
-                    <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-primary rounded-full">
-                          <ShieldCheck className="h-5 w-5 text-primary-foreground" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-primary">Owner Account</p>
-                          <p className="text-sm text-muted-foreground">
-                            As the first user, you'll have full system access
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Emergency Contact */}
-                  <div className="space-y-2">
-                    <Label htmlFor="emergencyContact">Emergency Contact (Optional)</Label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="emergencyContact"
-                        placeholder="+94 77 987 6543"
-                        className="pl-9"
-                        disabled={isLoading}
-                        {...form.register('emergencyContact')}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Password */}
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Password *</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="password"
-                        type="password"
-                        placeholder="••••••••"
-                        className="pl-9"
-                        disabled={isLoading}
-                        {...form.register('password')}
-                      />
-                    </div>
-                    {form.formState.errors.password && (
-                      <p className="text-sm text-destructive">
-                        {form.formState.errors.password.message}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Confirm Password */}
-                  <div className="space-y-2">
-                    <Label htmlFor="confirmPassword">Confirm Password *</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="confirmPassword"
-                        type="password"
-                        placeholder="••••••••"
-                        className="pl-9"
-                        disabled={isLoading}
-                        {...form.register('confirmPassword')}
-                      />
-                    </div>
-                    {form.formState.errors.confirmPassword && (
-                      <p className="text-sm text-destructive">
-                        {form.formState.errors.confirmPassword.message}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Approval Notice */}
-                  {!isFirstUser && ['draughtsman', 'bass', 'helper'].includes(form.watch('role')) && (
-                    <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-sm">
-                      <p className="text-yellow-600 dark:text-yellow-400">
-                        ⚠️ Your account will require admin approval before you can access the system.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Button Group */}
-                  <div className="flex gap-3">
-                    <Button 
-                      type="button" 
-                      variant="outline"
-                      className="flex-1" 
-                      onClick={() => setStep(1)}
-                    >
-                      <ArrowLeft className="h-4 w-4 mr-2" />
-                      Back
-                    </Button>
-                    <Button type="submit" className="flex-1" disabled={isLoading}>
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Creating...
-                        </>
-                      ) : (
-                        'Create Account'
-                      )}
-                    </Button>
-                  </div>
-                </>
+              {/* Approval Notice for non-first users */}
+              {isFirstUser === false && (
+                <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-sm">
+                  <p className="text-yellow-600 dark:text-yellow-400">
+                    ⚠️ Your account will require admin approval before you can access the system.
+                    An administrator will assign your role.
+                  </p>
+                </div>
               )}
+
+              {/* Password */}
+              <div className="space-y-2">
+                <Label htmlFor="password">Password *</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="••••••••"
+                    className="pl-9"
+                    disabled={isLoading}
+                    {...form.register('password')}
+                  />
+                </div>
+                {form.formState.errors.password && (
+                  <p className="text-sm text-destructive">
+                    {form.formState.errors.password.message}
+                  </p>
+                )}
+              </div>
+
+              {/* Confirm Password */}
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Confirm Password *</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    placeholder="••••••••"
+                    className="pl-9"
+                    disabled={isLoading}
+                    {...form.register('confirmPassword')}
+                  />
+                </div>
+                {form.formState.errors.confirmPassword && (
+                  <p className="text-sm text-destructive">
+                    {form.formState.errors.confirmPassword.message}
+                  </p>
+                )}
+              </div>
+
+              {/* Submit */}
+              <Button type="submit" className="w-full" size="lg" disabled={isLoading}>
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  'Create Account'
+                )}
+              </Button>
             </form>
 
             {/* Back to Login */}

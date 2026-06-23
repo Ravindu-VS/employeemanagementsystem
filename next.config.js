@@ -1,17 +1,21 @@
-const withPWA = require('next-pwa')({
-  dest: 'public',
-  register: true,
-  skipWaiting: true,
-  disable: process.env.NODE_ENV === 'development',
-});
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Enable React strict mode for better development experience
+  // Static export for GitHub Pages
+  output: 'export',
+
+  // GitHub Pages serves from /<repo-name>/
+  basePath: process.env.NEXT_PUBLIC_BASE_PATH || '',
+  assetPrefix: process.env.NEXT_PUBLIC_BASE_PATH || '',
+
+  // Trailing slash required for GitHub Pages static routing
+  trailingSlash: true,
+
+  // Enable React strict mode
   reactStrictMode: true,
-  
-  // Image optimization configuration
+
+  // Image optimization — must be unoptimized for static export
   images: {
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',
@@ -25,25 +29,16 @@ const nextConfig = {
       },
     ],
   },
-  
-  // Environment variables that should be available on the client
+
+  // Environment variables
   env: {
     NEXT_PUBLIC_APP_NAME: 'Employee Management System',
     NEXT_PUBLIC_APP_VERSION: '1.0.0',
   },
-  
-  // Experimental features
-  experimental: {
-    // Enable server actions
-    serverActions: {
-      allowedOrigins: ['localhost:3000'],
-    },
-  },
-  
-  // Webpack configuration for Firebase Admin SDK
+
+  // Webpack configuration
   webpack: (config, { isServer }) => {
     if (!isServer) {
-      // Don't include server-only modules on client
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
@@ -56,4 +51,4 @@ const nextConfig = {
   },
 };
 
-module.exports = withPWA(nextConfig);
+module.exports = nextConfig;

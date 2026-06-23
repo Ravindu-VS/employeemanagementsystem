@@ -94,6 +94,9 @@ export const ROUTES = {
   
   // Audit routes
   AUDIT_LOGS: '/dashboard/audit-logs',
+  
+  // User Approvals
+  USER_APPROVALS: '/dashboard/user-approvals',
 } as const;
 
 // =====================================================
@@ -159,6 +162,12 @@ export const USER_ROLES = {
     color: 'gray',
     permissions: ['view_own_attendance', 'view_own_payslip', 'request_advance'],
   },
+  driver: {
+    label: 'Driver',
+    level: 5,
+    color: 'teal',
+    permissions: ['view_dashboard', 'view_own_attendance', 'view_own_payslip'],
+  },
 } as const;
 
 // Role options for dropdowns/selects
@@ -170,6 +179,7 @@ export const ROLE_OPTIONS = [
   { value: 'draughtsman', label: 'Draughtsman' },
   { value: 'bass', label: 'Bass (Skilled Worker)' },
   { value: 'helper', label: 'Helper' },
+  { value: 'driver', label: 'Driver' },
 ] as const;
 
 // =====================================================

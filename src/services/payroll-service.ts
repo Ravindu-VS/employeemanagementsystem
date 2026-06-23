@@ -28,6 +28,7 @@ import { getWorkerWeeklyAttendanceSummary, getWorkerWeeklyAttendanceBySite } fro
 import { getEmployee } from './employee-service';
 import { getAdvancesForPayrollWeek } from './advance-service';
 import { getActiveSites } from './site-service';
+import { getDriverAttendanceForDateRange } from './attendance-service';
 import type { 
   WeeklyPayroll, 
   PayrollStatus, 
@@ -162,21 +163,45 @@ export async function generateEmployeePayroll(
   const dailyRate = employee.dailyRate || 0;
   const otRate = employee.otRate || 0;
   
-  const siteBreakdowns: SiteBreakdown[] = Object.entries(siteAttendance).map(
-    ([siteId, data]) => {
-      const regularPay = data.daysWorked * dailyRate;
-      const otPay = data.otHours * otRate;
-      return {
-        siteId,
-        siteName: siteNameMap.get(siteId) || siteId,
-        daysWorked: data.daysWorked,
-        otHours: data.otHours,
-        regularPay,
-        otPay,
-        totalPay: regularPay + otPay,
-      };
+  let siteBreakdowns: SiteBreakdown[] = [];
+  
+  if (employee.payType === 'daily_based' || employee.role === 'driver') {
+    // For daily_based workers (like drivers), fetch driver attendance
+    const driverAttendanceList = await getDriverAttendanceForDateRange(weekStartStr, weekEndStr);
+    const workerDriverAttendance = driverAttendanceList.filter(a => a.workerId === workerId && a.present);
+    
+    const daysWorked = workerDriverAttendance.length;
+    const otHours = workerDriverAttendance.reduce((sum, a) => sum + (a.otHours || 0), 0);
+    
+    if (daysWorked > 0 || otHours > 0) {
+      siteBreakdowns.push({
+        siteId: 'transportation',
+        siteName: 'Transportation Duties',
+        daysWorked,
+        otHours,
+        regularPay: daysWorked * dailyRate,
+        otPay: otHours * otRate,
+        totalPay: (daysWorked * dailyRate) + (otHours * otRate),
+      });
     }
-  );
+  } else {
+    // For site_based workers
+    siteBreakdowns = Object.entries(siteAttendance).map(
+      ([siteId, data]) => {
+        const regularPay = data.daysWorked * dailyRate;
+        const otPay = data.otHours * otRate;
+        return {
+          siteId,
+          siteName: siteNameMap.get(siteId) || siteId,
+          daysWorked: data.daysWorked,
+          otHours: data.otHours,
+          regularPay,
+          otPay,
+          totalPay: regularPay + otPay,
+        };
+      }
+    );
+  }
   
   // Aggregate totals across all sites
   const daysWorked = siteBreakdowns.reduce((s, b) => s + b.daysWorked, 0);

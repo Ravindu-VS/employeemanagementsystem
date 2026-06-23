@@ -21,12 +21,25 @@ export type UserRole =
   | 'supervisor'
   | 'draughtsman'
   | 'bass'
-  | 'helper';
+  | 'helper'
+  | 'driver';
 
 /**
  * Authentication status
  */
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
+
+/**
+ * User approval status for signup flow
+ */
+export type UserStatus = 'pending' | 'active' | 'rejected';
+
+/**
+ * Pay type determines how salary is calculated
+ * site_based: paid per site visit (supervisors, managers)
+ * daily_based: paid per day regardless of site (drivers, office staff)
+ */
+export type PayType = 'site_based' | 'daily_based';
 
 /**
  * Base user interface from Firebase Auth + Firestore
@@ -36,8 +49,10 @@ export interface User {
   email: string;
   displayName: string | null;
   photoURL: string | null;
-  role: UserRole;
+  role: UserRole | null;
   isActive: boolean;
+  approved: boolean;
+  status: UserStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -61,6 +76,7 @@ export interface UserProfile extends User {
   otRate: number;      // OT hourly rate
   hourlyRate: number;  // Legacy / calculated
   weeklyRate: number;  // Legacy / calculated
+  payType: PayType;    // How salary is calculated
   bankDetails?: BankDetails;
   documents: UserDocument[];
   metadata: UserMetadata;
@@ -219,6 +235,10 @@ export interface SimpleAttendance {
   eveningSite: string | null;  // siteId or null if absent
   otHours: number;             // overtime hours
   supervisorId: string;
+  attendanceType: 'site' | 'driver';  // Type of attendance record
+  role?: UserRole;             // Worker's role (for driver/supervisor logic)
+  present?: boolean;           // For drivers: simple present/absent
+  remarks?: string;            // For drivers: additional remarks
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -233,6 +253,7 @@ export interface BulkAttendanceEntry {
   morning: boolean;
   evening: boolean;
   otHours: number;
+  role?: UserRole;
 }
 
 // =====================================================
@@ -392,6 +413,15 @@ export interface PayrollReport {
 /**
  * Salary advance request
  */
+/**
+ * Advance status for carry-forward workflow
+ */
+export type AdvanceState = 
+  | 'approved'
+  | 'partially_deducted'
+  | 'fully_deducted'
+  | 'carried_forward';
+
 export interface AdvanceRequest {
   id: string;
   employeeId: string;
@@ -406,7 +436,10 @@ export interface AdvanceRequest {
   deductThisWeek: boolean;      // true = deduct from current payroll
   deductionWeek?: string;       // YYYY-MM-DD week for future deduction
   deductionWeekId?: string;     // Week when actually deducted (legacy)
+  deductedWeek?: string;        // Week when actually deducted (YYYY-MM-DD)
   isDeducted: boolean;
+  carryForward: boolean;        // true = carried forward, not deducted
+  advanceState?: AdvanceState;  // Current state in the carry-forward workflow
   createdAt: Date;
   updatedAt: Date;
 }
@@ -511,7 +544,11 @@ export type AuditAction =
   | 'logout'
   | 'approve'
   | 'reject'
-  | 'export';
+  | 'export'
+  | 'user_approved'
+  | 'user_rejected'
+  | 'advance_deducted'
+  | 'advance_carried_forward';
 
 // =====================================================
 // API RESPONSE TYPES
@@ -712,9 +749,13 @@ export const AUDIT_EVENTS = {
   ADVANCE_CREATED: 'ADVANCE_CREATED',
   ADVANCE_APPROVED: 'ADVANCE_APPROVED',
   ADVANCE_REJECTED: 'ADVANCE_REJECTED',
+  ADVANCE_DEDUCTED: 'ADVANCE_DEDUCTED',
+  ADVANCE_CARRIED_FORWARD: 'ADVANCE_CARRIED_FORWARD',
   LOAN_CREATED: 'LOAN_CREATED',
   LOAN_APPROVED: 'LOAN_APPROVED',
   USER_LOGIN: 'USER_LOGIN',
+  USER_APPROVED: 'USER_APPROVED',
+  USER_REJECTED: 'USER_REJECTED',
   SETTINGS_UPDATED: 'SETTINGS_UPDATED',
 } as const;
 

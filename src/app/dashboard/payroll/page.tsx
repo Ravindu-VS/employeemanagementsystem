@@ -48,6 +48,9 @@ import {
   getAllSites,
   getAllPendingAdvances,
   markAdvanceDeducted,
+  getDriverAttendanceForDateRange,
+  markAdvanceCarriedForward,
+  resetCarryForwardForWeek,
 } from '@/services';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
@@ -147,6 +150,11 @@ export default function PayrollPage() {
     queryFn: () => getSimpleAttendanceForDateRange(weekStartStr, saturdayStr),
   });
 
+  const { data: driverAttendance = [], isLoading: loadingDriver } = useQuery({
+    queryKey: ['driver-attendance', weekStartStr, saturdayStr],
+    queryFn: () => getDriverAttendanceForDateRange(weekStartStr, saturdayStr),
+  });
+
   const { data: employees = [] } = useQuery({
     queryKey: ['active-employees'],
     queryFn: getActiveEmployees,
@@ -183,6 +191,7 @@ export default function PayrollPage() {
 
   const siteNameMap = useMemo(() => {
     const map = new Map<string, string>();
+    map.set('transportation', 'Transportation Duties');
     sites.forEach((site: WorkSite) => map.set(site.id, site.name));
     return map;
   }, [sites]);
@@ -212,10 +221,13 @@ export default function PayrollPage() {
   // ---- ADVANCE DEDUCTION CHECKBOX ----
 
   const toggleDeduction = useCallback((advanceId: string) => {
-    setDeductionSelections(prev => ({
-      ...prev,
-      [advanceId]: !prev[advanceId],
-    }));
+    setDeductionSelections(prev => {
+      const currentValue = prev[advanceId] ?? true;
+      return {
+        ...prev,
+        [advanceId]: !currentValue,
+      };
+    });
   }, []);
 
   // ---- COMPUTE EMPLOYEE SUMMARIES (useMemo) ----
@@ -257,6 +269,24 @@ export default function PayrollPage() {
       }
     }
 
+    // Add driver attendance
+    for (const record of driverAttendance) {
+      if (!record.present) continue;
+
+      const emp = employeeMap.get(record.workerId);
+      if (!emp) continue;
+
+      if (!workerSiteMap.has(record.workerId)) {
+        workerSiteMap.set(record.workerId, new Map());
+      }
+      const siteMap = workerSiteMap.get(record.workerId)!;
+
+      const site = siteMap.get('transportation') || { daysWorked: 0, otHours: 0 };
+      site.daysWorked += 1;
+      site.otHours += (record.otHours || 0);
+      siteMap.set('transportation', site);
+    }
+
     const summaries: EmployeeWeekSummary[] = [];
     for (const [workerId, siteMap] of workerSiteMap) {
       const emp = employeeMap.get(workerId);
@@ -294,7 +324,7 @@ export default function PayrollPage() {
     }
 
     return summaries.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
-  }, [weekAttendance, employeeMap, siteNameMap, advancesByEmployee]);
+  }, [weekAttendance, driverAttendance, employeeMap, siteNameMap, advancesByEmployee]);
 
   // ---- SITE TOTALS (useMemo) ----
 
@@ -330,11 +360,11 @@ export default function PayrollPage() {
     const totalOtHours = employeeSummaries.reduce((s, e) => s + e.otHours, 0);
     const grossPayroll = employeeSummaries.reduce((s, e) => s + e.grossPay, 0);
 
-    // Calculate advance deductions based on CEO checkbox selections
+    // Calculate advance deductions based on CEO checkbox selections (defaults to true)
     let advanceDeductions = 0;
     for (const emp of employeeSummaries) {
       for (const adv of emp.advances) {
-        if (deductionSelections[adv.id]) {
+        if (deductionSelections[adv.id] !== false) {
           advanceDeductions += adv.amount;
         }
       }
@@ -362,7 +392,22 @@ export default function PayrollPage() {
   // ---- MUTATIONS ----
 
   const generateMutation = useMutation({
-    mutationFn: () => generateWeeklyPayroll(weekStart, user?.uid || ''),
+    mutationFn: async () => {
+      // Handle advance selections before generating payroll
+      for (const emp of employeeSummaries) {
+        for (const adv of emp.advances) {
+          if (deductionSelections[adv.id] === false) {
+            // Carry forward if explicitly unchecked
+            await markAdvanceCarriedForward(adv.id);
+          } else if (adv.carryForward) {
+            // Un-carry forward if checked but previously carried forward
+            await resetCarryForwardForWeek(adv.id);
+          }
+        }
+      }
+      
+      return generateWeeklyPayroll(weekStart, user?.uid || '');
+    },
     onSuccess: (data) => {
       toast({
         title: 'Payroll Generated',
@@ -399,7 +444,7 @@ export default function PayrollPage() {
     setShowPreview(false);
   };
 
-  const isLoading = loadingAttendance || loadingPayroll;
+  const isLoading = loadingAttendance || loadingDriver || loadingPayroll;
 
   if (!isAuthorized) return null;
 
@@ -674,7 +719,7 @@ function LiveWorkerCard({
 }) {
   // Calculate advance deduction for this worker based on checkbox state
   const advanceDeduction = summary.advances.reduce(
-    (sum, adv) => sum + (deductionSelections[adv.id] ? adv.amount : 0),
+    (sum, adv) => (deductionSelections[adv.id] !== false ? sum + adv.amount : sum),
     0
   );
   const finalSalary = summary.grossPay - advanceDeduction;
@@ -834,7 +879,7 @@ function LiveWorkerCard({
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={deductionSelections[adv.id] || false}
+                            checked={deductionSelections[adv.id] ?? true}
                             onChange={(e) => {
                               e.stopPropagation();
                               onToggleDeduction(adv.id);

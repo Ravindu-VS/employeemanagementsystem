@@ -124,6 +124,7 @@ export async function createAdvanceRequest(
     deductThisWeek: data.deductThisWeek ?? true,
     deductionWeek: data.deductionWeek,
     isDeducted: false,
+    carryForward: false,
   };
   
   return createDocument<AdvanceRequest>(COLLECTIONS.ADVANCES, advanceData as any);
@@ -214,6 +215,22 @@ export async function markAdvanceDeducted(
   await updateDocument<AdvanceRequest>(COLLECTIONS.ADVANCES, advanceId, {
     isDeducted: true,
     deductionWeekId: payrollWeekId,
+    deductedWeek: payrollWeekId,
+    carryForward: false,
+    advanceState: 'fully_deducted',
+  });
+}
+
+/**
+ * Mark advance as carried forward (not deducted this week)
+ */
+export async function markAdvanceCarriedForward(
+  advanceId: string
+): Promise<void> {
+  await updateDocument<AdvanceRequest>(COLLECTIONS.ADVANCES, advanceId, {
+    carryForward: true,
+    deductThisWeek: false,
+    advanceState: 'carried_forward',
   });
 }
 
@@ -269,8 +286,10 @@ export async function getAdvancesForPayrollWeek(
     where('isDeducted', '==', false),
   ]);
 
+  // Only return advances that are explicitly marked for deduction this week
+  // Carried-forward advances are NOT auto-deducted
   return undeducted.filter(
-    (adv) => adv.deductThisWeek === true || adv.deductionWeek === weekId
+    (adv) => (adv.deductThisWeek === true && adv.carryForward !== true) || adv.deductionWeek === weekId
   );
 }
 
@@ -283,4 +302,36 @@ export async function getAllPendingAdvances(): Promise<AdvanceRequest[]> {
     where('status', '==', 'approved'),
     where('isDeducted', '==', false),
   ]);
+}
+
+/**
+ * Get carried-forward advances (approved, not deducted, marked as carry forward)
+ */
+export async function getCarriedForwardAdvances(): Promise<AdvanceRequest[]> {
+  return getDocuments<AdvanceRequest>(COLLECTIONS.ADVANCES, [
+    where('status', '==', 'approved'),
+    where('isDeducted', '==', false),
+    where('carryForward', '==', true),
+  ]);
+}
+
+/**
+ * Get deducted advances history
+ */
+export async function getDeductedAdvances(): Promise<AdvanceRequest[]> {
+  return getDocuments<AdvanceRequest>(COLLECTIONS.ADVANCES, [
+    where('isDeducted', '==', true),
+  ]);
+}
+
+/**
+ * Reset carry-forward flag for next week (make advances available for deduction again)
+ */
+export async function resetCarryForwardForWeek(
+  advanceId: string
+): Promise<void> {
+  await updateDocument<AdvanceRequest>(COLLECTIONS.ADVANCES, advanceId, {
+    carryForward: false,
+    deductThisWeek: false,
+  });
 }

@@ -6,7 +6,9 @@ import { Sidebar } from "@/components/dashboard/sidebar";
 import { Header } from "@/components/dashboard/header";
 import { useAuth, useRequireAuth } from "@/components/providers/auth-provider";
 import { cn } from "@/lib/utils";
-import { Loader2 } from "lucide-react";
+import { Loader2, Clock, LogOut } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { signOut } from "@/lib/firebase/auth";
 
 /**
  * Dashboard Layout
@@ -19,7 +21,7 @@ interface DashboardLayoutProps {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { isLoading } = useRequireAuth();
-  const { profile } = useAuth();
+  const { profile, isPendingApproval } = useAuth();
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   const pathname = usePathname();
 
@@ -40,13 +42,52 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     return null;
   }
 
+  // Show pending approval page
+  if (isPendingApproval) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-6 max-w-md text-center px-4">
+          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-yellow-500/20">
+            <Clock className="h-10 w-10 text-yellow-500" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold">Account Pending Approval</h1>
+            <p className="text-muted-foreground">
+              Your account is awaiting approval from an administrator.
+              You will be notified once your account has been reviewed and a role has been assigned.
+            </p>
+          </div>
+          <div className="rounded-lg border border-border bg-muted/30 p-4 w-full">
+            <div className="space-y-1 text-sm">
+              <p><span className="text-muted-foreground">Name:</span> {profile.displayName}</p>
+              <p><span className="text-muted-foreground">Email:</span> {profile.email}</p>
+              <p><span className="text-muted-foreground">Status:</span>{' '}
+                <span className="inline-flex items-center rounded-full bg-yellow-500/20 px-2 py-0.5 text-xs font-medium text-yellow-500">
+                  Pending
+                </span>
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            onClick={async () => { await signOut(); }}
+            className="gap-2"
+          >
+            <LogOut className="h-4 w-4" />
+            Sign Out
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-background overflow-hidden">
       {/* Sidebar */}
       <Sidebar 
         collapsed={sidebarCollapsed} 
         onCollapsedChange={setSidebarCollapsed}
-        userRole={profile.role}
+        userRole={profile.role!}
       />
 
       {/* Main content area */}

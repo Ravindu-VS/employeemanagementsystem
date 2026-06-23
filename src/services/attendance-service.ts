@@ -34,6 +34,7 @@ import type {
   PaginationParams,
   AttendanceFilters,
   DateRange,
+  UserRole,
 } from '@/types';
 
 /**
@@ -495,7 +496,8 @@ export async function getSimpleAttendance(
 }
 
 /**
- * Get simple attendance for a specific worker on a date
+ * Get simple attendance for a specific worker on a date.
+ * Returns ALL records for multi-site roles (supervisor/manager/ceo/owner).
  */
 export async function getWorkerSimpleAttendance(
   workerId: string,
@@ -511,6 +513,23 @@ export async function getWorkerSimpleAttendance(
 }
 
 /**
+ * Get ALL simple attendance records for a worker on a date.
+ * Used for multi-site roles (supervisor, manager, ceo, owner) who
+ * can visit multiple sites on the same day.
+ */
+export async function getWorkerAllSimpleAttendance(
+  workerId: string,
+  date: string
+): Promise<SimpleAttendance[]> {
+  if (!workerId || !date) return [];
+
+  return getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
+    where('workerId', '==', workerId),
+    where('date', '==', date),
+  ]);
+}
+
+/**
  * Mark simple attendance for a single worker
  */
 export async function markSimpleAttendance(
@@ -522,17 +541,30 @@ export async function markSimpleAttendance(
     eveningSite: string | null;
     otHours: number;
     supervisorId: string;
+    attendanceType?: 'site' | 'driver';
+    role?: UserRole;
     notes?: string;
   }
 ): Promise<string> {
-  const existing = await getWorkerSimpleAttendance(data.workerId, data.date);
+  const isMultiSite = data.role && ['owner', 'ceo', 'manager', 'supervisor'].includes(data.role);
+  let existing: SimpleAttendance | null = null;
+  
+  if (isMultiSite) {
+    const allRecords = await getWorkerAllSimpleAttendance(data.workerId, data.date);
+    const targetSiteId = data.morningSite || data.eveningSite;
+    existing = allRecords.find(r => r.morningSite === targetSiteId || r.eveningSite === targetSiteId) || null;
+  } else {
+    existing = await getWorkerSimpleAttendance(data.workerId, data.date);
+  }
 
   const updatePayload: Record<string, any> = {
     morningSite: data.morningSite,
     eveningSite: data.eveningSite,
     otHours: data.otHours,
     supervisorId: data.supervisorId,
+    attendanceType: data.attendanceType || 'site',
   };
+  if (data.role !== undefined) updatePayload.role = data.role;
   if (data.notes !== undefined) updatePayload.notes = data.notes;
 
   if (existing) {
@@ -563,7 +595,14 @@ export async function bulkMarkSimpleAttendance(
   const existingRecords = await getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
     where('date', '==', date),
   ]);
-  const existingMap = new Map(existingRecords.map(r => [r.workerId, r]));
+  
+  // Create a map of workerId -> array of records
+  const recordsByWorker = new Map<string, SimpleAttendance[]>();
+  for (const r of existingRecords) {
+    const list = recordsByWorker.get(r.workerId) || [];
+    list.push(r);
+    recordsByWorker.set(r.workerId, list);
+  }
 
   // 2. Build batch — only include changed records
   const batch = writeBatch(db);
@@ -572,7 +611,26 @@ export async function bulkMarkSimpleAttendance(
 
   for (const entry of entries) {
     try {
-      const existing = existingMap.get(entry.workerId);
+      const isMultiSite = ['owner', 'ceo', 'manager', 'supervisor'].includes(entry.role);
+      const workerRecords = recordsByWorker.get(entry.workerId) || [];
+      
+      let existing: SimpleAttendance | undefined;
+      
+      if (isMultiSite) {
+        // Find record for this specific site for supervisors
+        existing = workerRecords.find(r => 
+          r.morningSite === siteId || r.eveningSite === siteId
+        );
+        
+        // If multi-site and no record for this site yet, and they are absent here, skip creating empty record
+        if (!existing && !entry.morning && !entry.evening && entry.otHours === 0) {
+          success++;
+          continue;
+        }
+      } else {
+        // Regular worker: use their one and only record
+        existing = workerRecords[0];
+      }
 
       const morningSite = entry.morning ? siteId : (existing?.morningSite ?? null);
       const eveningSite = entry.evening ? siteId : (existing?.eveningSite ?? null);
@@ -597,6 +655,7 @@ export async function bulkMarkSimpleAttendance(
           eveningSite,
           otHours,
           supervisorId,
+          attendanceType: 'site',
           updatedAt: serverTimestamp(),
         });
       } else {
@@ -610,6 +669,7 @@ export async function bulkMarkSimpleAttendance(
           eveningSite,
           otHours,
           supervisorId,
+          attendanceType: 'site',
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -706,16 +766,32 @@ export async function getWorkerWeeklyAttendanceBySite(
     const morningSite = record.morningSite;
     const eveningSite = record.eveningSite;
 
-    // Morning shift → 0.5 day credited to morning site
-    if (morningSite) {
-      if (!siteMap[morningSite]) siteMap[morningSite] = { daysWorked: 0, otHours: 0 };
-      siteMap[morningSite].daysWorked += 0.5;
-    }
+    // Check if this is a multi-site role (supervisor/manager/ceo/owner)
+    // For these roles, each site visit counts independently
+    const isMultiSiteRole = record.role && ['owner', 'ceo', 'manager', 'supervisor'].includes(record.role);
 
-    // Evening shift → 0.5 day credited to evening site
-    if (eveningSite) {
-      if (!siteMap[eveningSite]) siteMap[eveningSite] = { daysWorked: 0, otHours: 0 };
-      siteMap[eveningSite].daysWorked += 0.5;
+    if (isMultiSiteRole) {
+      // Multi-site roles: each site visit = 1 full visit (not 0.5)
+      if (morningSite) {
+        if (!siteMap[morningSite]) siteMap[morningSite] = { daysWorked: 0, otHours: 0 };
+        siteMap[morningSite].daysWorked += 1; // Full visit per site
+        console.log('[SUPERVISOR PAYROLL]', record.workerId, record.date, morningSite, 'visit=1');
+      }
+      if (eveningSite && eveningSite !== morningSite) {
+        if (!siteMap[eveningSite]) siteMap[eveningSite] = { daysWorked: 0, otHours: 0 };
+        siteMap[eveningSite].daysWorked += 1; // Full visit per site
+        console.log('[SUPERVISOR PAYROLL]', record.workerId, record.date, eveningSite, 'visit=1');
+      }
+    } else {
+      // Normal workers: morning = 0.5, evening = 0.5
+      if (morningSite) {
+        if (!siteMap[morningSite]) siteMap[morningSite] = { daysWorked: 0, otHours: 0 };
+        siteMap[morningSite].daysWorked += 0.5;
+      }
+      if (eveningSite) {
+        if (!siteMap[eveningSite]) siteMap[eveningSite] = { daysWorked: 0, otHours: 0 };
+        siteMap[eveningSite].daysWorked += 0.5;
+      }
     }
 
     // OT hours: if morning and evening are same site, credit to that site.
@@ -732,4 +808,140 @@ export async function getWorkerWeeklyAttendanceBySite(
   }
 
   return siteMap;
+}
+
+// =====================================================
+// DRIVER ATTENDANCE
+// =====================================================
+
+/**
+ * Mark driver attendance — no site selection, just present/absent + OT
+ */
+export async function markDriverAttendance(
+  data: {
+    date: string;
+    workerId: string;
+    workerName: string;
+    present: boolean;
+    otHours: number;
+    supervisorId: string;
+    remarks?: string;
+  }
+): Promise<string> {
+  // Look for existing driver attendance record
+  const existing = await getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
+    where('workerId', '==', data.workerId),
+    where('date', '==', data.date),
+    where('attendanceType', '==', 'driver'),
+  ]);
+
+  const payload: Record<string, any> = {
+    present: data.present,
+    morningSite: null,
+    eveningSite: null,
+    otHours: data.otHours,
+    supervisorId: data.supervisorId,
+    attendanceType: 'driver',
+    role: 'driver',
+  };
+  if (data.remarks !== undefined) payload.remarks = data.remarks;
+
+  if (existing.length > 0) {
+    await updateDocument<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, existing[0].id, payload);
+    return existing[0].id;
+  }
+
+  return createDocument<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, {
+    date: data.date,
+    workerId: data.workerId,
+    workerName: data.workerName,
+    ...payload,
+  } as any);
+}
+
+/**
+ * Bulk mark driver attendance for multiple drivers
+ */
+export async function bulkMarkDriverAttendance(
+  date: string,
+  entries: { workerId: string; workerName: string; present: boolean; otHours: number; remarks?: string }[],
+  supervisorId: string
+): Promise<{ success: number; failed: number }> {
+  const batch = writeBatch(db);
+  let success = 0;
+  let failed = 0;
+
+  // Fetch existing driver records for this date
+  const existingRecords = await getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
+    where('date', '==', date),
+    where('attendanceType', '==', 'driver'),
+  ]);
+  const existingMap = new Map(existingRecords.map(r => [r.workerId, r]));
+
+  for (const entry of entries) {
+    try {
+      const existing = existingMap.get(entry.workerId);
+
+      if (existing) {
+        const docRef = doc(db, SIMPLE_ATTENDANCE_COLLECTION, existing.id);
+        batch.update(docRef, {
+          present: entry.present,
+          otHours: entry.otHours,
+          remarks: entry.remarks || null,
+          supervisorId,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        const newDocRef = doc(collection(db, SIMPLE_ATTENDANCE_COLLECTION));
+        batch.set(newDocRef, {
+          date,
+          workerId: entry.workerId,
+          workerName: entry.workerName,
+          morningSite: null,
+          eveningSite: null,
+          present: entry.present,
+          otHours: entry.otHours,
+          remarks: entry.remarks || null,
+          supervisorId,
+          attendanceType: 'driver',
+          role: 'driver',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+      success++;
+    } catch {
+      failed++;
+    }
+  }
+
+  if (success > 0) {
+    await batch.commit();
+  }
+
+  return { success, failed };
+}
+
+/**
+ * Get driver attendance records for a date
+ */
+export async function getDriverAttendance(date: string): Promise<SimpleAttendance[]> {
+  return getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
+    where('date', '==', date),
+    where('attendanceType', '==', 'driver'),
+  ]);
+}
+
+/**
+ * Get driver attendance for a date range (for payroll)
+ */
+export async function getDriverAttendanceForDateRange(
+  startDate: string,
+  endDate: string
+): Promise<SimpleAttendance[]> {
+  return getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
+    where('attendanceType', '==', 'driver'),
+    where('date', '>=', startDate),
+    where('date', '<=', endDate),
+  ]);
 }

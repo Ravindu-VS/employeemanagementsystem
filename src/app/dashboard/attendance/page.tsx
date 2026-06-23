@@ -35,6 +35,8 @@ import {
   bulkMarkSimpleAttendance,
   getActiveEmployees,
   getAllSites,
+  bulkMarkDriverAttendance,
+  getDriverAttendance,
 } from '@/services';
 import { useRequireRole, useAuth } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
@@ -57,6 +59,7 @@ const roleBadgeColors: Record<UserRole, string> = {
   draughtsman: 'bg-yellow-500/20 text-yellow-400',
   bass: 'bg-orange-500/20 text-orange-400',
   helper: 'bg-gray-500/20 text-gray-400',
+  driver: 'bg-teal-500/20 text-teal-400',
 };
 
 // Worker row state for the marking UI
@@ -71,7 +74,7 @@ interface WorkerAttendanceRow {
 }
 
 export default function AttendancePage() {
-  const { isAuthorized } = useRequireRole(['owner', 'ceo', 'manager', 'supervisor']);
+  const { isAuthorized } = useRequireRole(['owner', 'ceo', 'manager', 'supervisor', 'driver']);
   const { profile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -173,6 +176,7 @@ export default function AttendancePage() {
       const entries: BulkAttendanceEntry[] = workerRows.map((row) => ({
         workerId: row.workerId,
         workerName: row.workerName,
+        role: row.role,
         morning: row.morning,
         evening: row.evening,
         otHours: row.otHours,
@@ -535,6 +539,243 @@ export default function AttendancePage() {
           </div>
         </>
       )}
+
+      {/* =====================================================
+          DRIVERS ATTENDANCE SECTION
+          ===================================================== */}
+      <DriversAttendanceSection
+        dateStr={dateStr}
+        employees={employees}
+        profile={profile}
+      />
+    </div>
+  );
+}
+
+// =====================================================
+// DRIVERS ATTENDANCE SECTION
+// =====================================================
+
+interface DriverRow {
+  workerId: string;
+  workerName: string;
+  present: boolean;
+  otHours: number;
+  remarks: string;
+}
+
+function DriversAttendanceSection({
+  dateStr,
+  employees,
+  profile,
+}: {
+  dateStr: string;
+  employees: any[];
+  profile: any;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [driverRows, setDriverRows] = useState<DriverRow[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
+
+  // Get drivers
+  const drivers = useMemo(
+    () => employees.filter((e: any) => e.role === 'driver'),
+    [employees]
+  );
+
+  // Fetch existing driver attendance
+  const { data: driverAttendance = [], isLoading } = useQuery({
+    queryKey: ['driver-attendance', dateStr],
+    queryFn: () => getDriverAttendance(dateStr),
+    enabled: drivers.length > 0,
+  });
+
+  // Build driver rows
+  useEffect(() => {
+    if (drivers.length === 0) {
+      setDriverRows([]);
+      return;
+    }
+
+    const existingMap = new Map(
+      driverAttendance.map((a: any) => [a.workerId, a])
+    );
+
+    const rows: DriverRow[] = drivers.map((emp: any) => {
+      const existing = existingMap.get(emp.workerId || emp.uid);
+      return {
+        workerId: emp.workerId || emp.uid,
+        workerName: emp.displayName || emp.email,
+        present: existing?.present ?? false,
+        otHours: existing?.otHours ?? 0,
+        remarks: existing?.remarks ?? '',
+      };
+    });
+
+    setDriverRows(rows);
+    setIsDirty(false);
+  }, [drivers, driverAttendance]);
+
+  // Save mutation
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!profile) throw new Error('Not authenticated');
+      const entries = driverRows.map((row) => ({
+        workerId: row.workerId,
+        workerName: row.workerName,
+        present: row.present,
+        otHours: row.otHours,
+        remarks: row.remarks,
+      }));
+      return bulkMarkDriverAttendance(dateStr, entries, profile.uid);
+    },
+    onSuccess: (result) => {
+      toast({
+        title: 'Driver Attendance Saved',
+        description: `${result.success} drivers marked${result.failed > 0 ? `, ${result.failed} failed` : ''}`,
+      });
+      setIsDirty(false);
+      queryClient.invalidateQueries({ queryKey: ['driver-attendance'] });
+    },
+    onError: () => {
+      toast({ title: 'Error', description: 'Failed to save driver attendance', variant: 'destructive' });
+    },
+  });
+
+  if (drivers.length === 0) return null;
+
+  const presentCount = driverRows.filter((r) => r.present).length;
+
+  return (
+    <div className="space-y-4 mt-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-teal-500/20">
+              <Clock className="h-4 w-4 text-teal-500" />
+            </span>
+            Drivers Attendance
+          </h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            {presentCount} of {driverRows.length} drivers present
+          </p>
+        </div>
+        <Button
+          onClick={() => saveMutation.mutate()}
+          disabled={!isDirty || saveMutation.isPending}
+          className="gap-2"
+        >
+          {saveMutation.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
+          Save Drivers
+        </Button>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="flex h-32 items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border text-left">
+                    <th className="p-4 font-medium text-muted-foreground">Driver</th>
+                    <th className="p-4 text-center font-medium text-muted-foreground">Present</th>
+                    <th className="p-4 text-center font-medium text-muted-foreground">OT (hrs)</th>
+                    <th className="p-4 font-medium text-muted-foreground">Remarks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {driverRows.map((row) => (
+                    <tr
+                      key={row.workerId}
+                      className="border-b border-border/50 transition-colors hover:bg-muted/30"
+                    >
+                      <td className="p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-500/20 font-medium text-teal-500">
+                            {row.workerName.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-medium">{row.workerName}</p>
+                            <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-teal-500/20 text-teal-400">
+                              Driver
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDriverRows((prev) =>
+                              prev.map((r) =>
+                                r.workerId === row.workerId ? { ...r, present: !r.present } : r
+                              )
+                            );
+                            setIsDirty(true);
+                          }}
+                          className={cn(
+                            'inline-flex h-12 w-12 items-center justify-center rounded-lg border-2 text-xl font-bold transition-all active:scale-95',
+                            row.present
+                              ? 'border-green-500 bg-green-500/20 text-green-500'
+                              : 'border-border text-muted-foreground hover:border-green-500/50'
+                          )}
+                        >
+                          {row.present ? '✓' : '—'}
+                        </button>
+                      </td>
+                      <td className="p-4 text-center">
+                        <input
+                          type="number"
+                          min="0"
+                          max="12"
+                          step="0.5"
+                          value={row.otHours}
+                          onChange={(e) => {
+                            setDriverRows((prev) =>
+                              prev.map((r) =>
+                                r.workerId === row.workerId
+                                  ? { ...r, otHours: Math.max(0, parseFloat(e.target.value) || 0) }
+                                  : r
+                              )
+                            );
+                            setIsDirty(true);
+                          }}
+                          className="h-12 w-16 rounded-lg border border-border bg-background text-center text-lg font-bold focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                      </td>
+                      <td className="p-4">
+                        <input
+                          type="text"
+                          value={row.remarks}
+                          onChange={(e) => {
+                            setDriverRows((prev) =>
+                              prev.map((r) =>
+                                r.workerId === row.workerId ? { ...r, remarks: e.target.value } : r
+                              )
+                            );
+                            setIsDirty(true);
+                          }}
+                          placeholder="Route / notes"
+                          className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
