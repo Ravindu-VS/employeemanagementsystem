@@ -146,7 +146,7 @@ export default function EditEmployeePage() {
         createAuditLog({
           userId: profile.uid,
           userName: profile.displayName || profile.email,
-          userRole: profile.role,
+          userRole: profile.role!,
           action: 'update',
           resource: 'employees',
           resourceId: employeeId,
