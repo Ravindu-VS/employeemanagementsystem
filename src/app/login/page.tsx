@@ -112,7 +112,7 @@ function LoginPageContent() {
       createAuditLog({
         userId: profile.uid,
         userName: profile.displayName || profile.email,
-        userRole: profile.role,
+        userRole: profile.role!,
         action: 'login',
         resource: 'auth',
         resourceId: profile.uid,

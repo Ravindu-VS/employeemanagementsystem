@@ -146,7 +146,7 @@ export default function CreateEmployeePage() {
         createAuditLog({
           userId: profile.uid,
           userName: profile.displayName || profile.email,
-          userRole: profile.role,
+          userRole: profile.role!,
           action: 'create',
           resource: 'employees',
           resourceId: firebaseUser.uid,

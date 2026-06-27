@@ -110,7 +110,7 @@ export default function CreateSitePage() {
         createAuditLog({
           userId: profile.uid,
           userName: profile.displayName || profile.email,
-          userRole: profile.role,
+          userRole: profile.role!,
           action: 'create',
           resource: 'sites',
           resourceId: generatedCode,

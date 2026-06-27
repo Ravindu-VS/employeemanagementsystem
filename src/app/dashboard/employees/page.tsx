@@ -121,7 +121,7 @@ export default function EmployeesPage() {
         createAuditLog({
           userId: profile.uid,
           userName: profile.displayName || profile.email,
-          userRole: profile.role,
+          userRole: profile.role!,
           action: 'update',
           resource: 'employees',
           resourceId: employee.uid,
@@ -145,7 +145,7 @@ export default function EmployeesPage() {
         createAuditLog({
           userId: profile.uid,
           userName: profile.displayName || profile.email,
-          userRole: profile.role,
+          userRole: profile.role!,
           action: 'delete',
           resource: 'employees',
           resourceId: employee.uid,

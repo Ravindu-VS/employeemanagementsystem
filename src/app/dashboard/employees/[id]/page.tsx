@@ -51,6 +51,7 @@ const roleBadgeColors: Record<UserRole, string> = {
   draughtsman: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
   bass: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
   helper: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  driver: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
 };
 
 export default function EmployeeDetailPage() {
@@ -120,7 +121,7 @@ export default function EmployeeDetailPage() {
         createAuditLog({
           userId: profile.uid,
           userName: profile.displayName || profile.email,
-          userRole: profile.role,
+          userRole: profile.role!,
           action: 'update',
           resource: 'employees',
           resourceId: employee.uid,
@@ -148,7 +149,7 @@ export default function EmployeeDetailPage() {
         createAuditLog({
           userId: profile.uid,
           userName: profile.displayName || profile.email,
-          userRole: profile.role,
+          userRole: profile.role!,
           action: 'delete',
           resource: 'employees',
           resourceId: employee.uid,

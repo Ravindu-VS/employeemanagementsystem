@@ -183,7 +183,7 @@ export default function SettingsPage() {
           await createAuditLog({
             userId: user.uid,
             userName: profile.displayName || user.email || '',
-            userRole: profile.role,
+            userRole: profile.role!,
             action: 'update',
             resource: 'settings/company',
             resourceId: 'company',
@@ -196,7 +196,7 @@ export default function SettingsPage() {
           await createAuditLog({
             userId: user.uid,
             userName: profile.displayName || user.email || '',
-            userRole: profile.role,
+            userRole: profile.role!,
             action: 'update',
             resource: 'settings/payroll',
             resourceId: 'payroll',
@@ -209,7 +209,7 @@ export default function SettingsPage() {
           await createAuditLog({
             userId: user.uid,
             userName: profile.displayName || user.email || '',
-            userRole: profile.role,
+            userRole: profile.role!,
             action: 'update',
             resource: 'settings/attendance',
             resourceId: 'attendance',
@@ -222,7 +222,7 @@ export default function SettingsPage() {
           await createAuditLog({
             userId: user.uid,
             userName: profile.displayName || user.email || '',
-            userRole: profile.role,
+            userRole: profile.role!,
             action: 'update',
             resource: 'settings/notifications',
             resourceId: 'notifications',

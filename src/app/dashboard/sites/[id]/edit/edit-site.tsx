@@ -107,7 +107,7 @@ export default function EditSitePage() {
         createAuditLog({
           userId: profile.uid,
           userName: profile.displayName || profile.email,
-          userRole: profile.role,
+          userRole: profile.role!,
           action: 'update',
           resource: 'sites',
           resourceId: siteId,
