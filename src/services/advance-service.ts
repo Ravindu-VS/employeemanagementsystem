@@ -194,8 +194,8 @@ export async function createAdvanceRequest(
       ? new Date(data.requestedAt + 'T12:00:00')
       : new Date(),
     status: 'pending',
-    deductThisWeek: data.deductThisWeek ?? true,
-    deductionWeek: data.deductionWeek || null,
+    deductThisWeek: true,
+    deductionWeek: null,
     isDeducted: false,
     carryForward: false,
     deducted: false,

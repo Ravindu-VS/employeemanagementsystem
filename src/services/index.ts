@@ -92,8 +92,6 @@ export {
   cancelAdvance,
   markAdvanceDeducted,
   markAdvanceCarriedForward,
-  getUndeductedAdvances,
-  getAdvancesForPayrollWeek,
   getAllPendingAdvances,
   getCarriedForwardAdvances,
   getDeductedAdvances,

@@ -27,7 +27,7 @@ import {
 import { calculateOtRate, calculateOtPay, calculateBasePay, calculatePayrollBreakdown } from "@/domain/payroll";
 import { getWorkerWeeklyAttendanceSummary, getWorkerWeeklyAttendanceBySite } from './attendance-service';
 import { getEmployee } from './employee-service';
-import { getAdvancesForPayrollWeek, getPendingAdvancesByWorkerIds, markAdvanceDeducted } from './advance-service';
+import { getPendingAdvancesByWorkerIds, markAdvanceDeducted } from './advance-service';
 import { getActiveSites, getAllSites } from './site-service';
 import { getDriverAttendanceForDateRange } from './attendance-service';
 import type { 

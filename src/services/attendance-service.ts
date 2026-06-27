@@ -733,7 +733,7 @@ export async function bulkMarkSimpleAttendance(
           date,
           workerId: entry.workerId,
           workerName: entry.workerName,
-          role: workerRole || 'helper',
+          role: workerRoles?.[entry.workerId] || 'helper',
           otHours,
           supervisorId,
           attendanceType: 'site',

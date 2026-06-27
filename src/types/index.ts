@@ -241,7 +241,7 @@ export interface SimpleAttendance {
   date: string; // YYYY-MM-DD
   workerId: string;
   workerName: string;
-  role?: string; // NEW: role to determine attendance structure
+
 
   // For LABOR WORKERS (bass, helper, draughtsman)
   morningSite?: string | null;  // siteId or null if absent
