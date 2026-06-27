@@ -44,7 +44,7 @@ import type { UserRole } from '@/types';
 // Form validation schema
 const employeeSchema = z.object({
   displayName: z.string().min(2, 'Name must be at least 2 characters'),
-  role: z.enum(['owner', 'ceo', 'manager', 'supervisor', 'draughtsman', 'bass', 'helper']),
+  role: z.enum(['owner', 'ceo', 'manager', 'supervisor', 'draughtsman', 'bass', 'helper', 'driver']),
   phone: z.string().optional(),
   address: z.string().optional(),
   employeeId: z.string().optional(),
@@ -102,7 +102,7 @@ export default function EditEmployeePage() {
     if (employee) {
       reset({
         displayName: employee.displayName || '',
-        role: employee.role,
+        role: (employee.role || 'helper') as any,
         phone: employee.phone || '',
         address: employee.address || '',
         employeeId: employee.workerId || '',
