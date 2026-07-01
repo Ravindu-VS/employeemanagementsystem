@@ -366,10 +366,10 @@ export default function EmployeesPage() {
                           <span
                             className={cn(
                               'inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium',
-                              roleBadgeColors[employee.role]
+                              roleBadgeColors[employee.role || 'helper']
                             )}
                           >
-                            {USER_ROLES[employee.role]?.label || employee.role}
+                            {USER_ROLES[employee.role || 'helper']?.label || employee.role}
                           </span>
                         </td>
                         <td className="p-4">

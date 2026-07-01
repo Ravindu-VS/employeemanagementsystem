@@ -219,9 +219,9 @@ export default function EmployeeDetailPage() {
                 </h1>
                 <span className={cn(
                   'inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium',
-                  roleBadgeColors[employee.role]
+                  roleBadgeColors[employee.role || 'helper']
                 )}>
-                  {USER_ROLES[employee.role]?.label || employee.role}
+                  {USER_ROLES[employee.role || 'helper']?.label || employee.role}
                 </span>
                 <span className={cn(
                   'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
@@ -416,7 +416,7 @@ export default function EmployeeDetailPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Role Level</p>
                 <p className="font-medium">
-                  Level {USER_ROLES[employee.role]?.level || 0}
+                  Level {USER_ROLES[employee.role || 'helper']?.level || 0}
                 </p>
               </div>
             </div>

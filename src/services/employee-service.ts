@@ -261,7 +261,8 @@ export async function getEmployeeCountByRole(): Promise<Record<UserRole, number>
   const counts: Record<string, number> = {};
   
   employees.forEach((employee) => {
-    counts[employee.role] = (counts[employee.role] || 0) + 1;
+    const roleKey = employee.role || 'helper';
+    counts[roleKey] = (counts[roleKey] || 0) + 1;
   });
   
   return counts as Record<UserRole, number>;
