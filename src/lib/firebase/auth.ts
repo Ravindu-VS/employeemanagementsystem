@@ -90,6 +90,7 @@ async function createUserProfile(firebaseUser: FirebaseUser): Promise<{ profile:
     }
     
     // Create new user profile
+    // First user = owner with full access, everyone else = pending approval
     const newProfile = {
       uid: firebaseUser.uid,
       email: firebaseUser.email || '',
@@ -97,11 +98,16 @@ async function createUserProfile(firebaseUser: FirebaseUser): Promise<{ profile:
       photoURL: firebaseUser.photoURL,
       workerId: '',
       phone: firebaseUser.phoneNumber || '',
-      role: isFirstUser ? 'owner' : 'helper',
+      // First user = owner, everyone else = null (pending role assignment)
+      role: isFirstUser ? 'owner' : null,
+      status: isFirstUser ? 'active' : 'pending',
+      approved: isFirstUser ? true : false,
       isActive: isFirstUser, // First user is active, others need approval
+      payType: 'site_based',
       joiningDate: new Date(),
       assignedSites: [],
       dailyRate: 0,
+      otRate: 0,
       hourlyRate: 0,
       weeklyRate: 0,
       documents: [],
@@ -129,9 +135,12 @@ async function createUserProfile(firebaseUser: FirebaseUser): Promise<{ profile:
     }
   } else {
     // Existing user - check if active
-    if (!profile.isActive) {
+    // Allow pending-approval users to stay signed in (dashboard layout shows pending page)
+    // Only sign out truly deactivated users (active=false AND not pending)
+    const isPending = profile.approved === false || profile.status === 'pending';
+    if (!profile.isActive && !isPending) {
       await firebaseSignOut(auth);
-      throw new Error('Your account is pending approval or has been deactivated. Please contact administrator.');
+      throw new Error('Your account has been deactivated. Please contact administrator.');
     }
     
     // Update last login
