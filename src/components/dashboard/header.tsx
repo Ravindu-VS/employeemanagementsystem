@@ -99,7 +99,7 @@ export function Header({ user, onMenuClick, sidebarCollapsed }: HeaderProps) {
   };
 
   // Get user role display name
-  const roleLabel = USER_ROLES[user.role]?.label || user.role;
+  const roleLabel = user.role ? USER_ROLES[user.role]?.label || user.role : 'Pending';
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-border bg-card px-4">

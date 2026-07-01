@@ -754,7 +754,7 @@ function LiveWorkerCard({
             <div className="flex items-center gap-2">
               <span className={cn(
                 'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
-                roleBadgeColors[summary.employeeRole]
+                roleBadgeColors[(summary.employeeRole as any) || 'helper']
               )}>
                 {summary.employeeRole}
               </span>

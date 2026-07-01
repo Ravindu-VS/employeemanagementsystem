@@ -104,7 +104,7 @@ export function WorkerPayrollCard({
             <div className="flex items-center gap-1.5 sm:gap-2 max-w-sm text-xs flex-wrap">
               <span className={cn(
                 'inline-flex shrink-0 rounded-full px-1.5 sm:px-2 py-0.5 font-medium',
-                roleBadgeColors[summary.employeeRole]
+                roleBadgeColors[(summary.employeeRole as any) || 'helper']
               )}>
                 {summary.employeeRole}
               </span>
