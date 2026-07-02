@@ -33,6 +33,7 @@ const roleBadgeColors: Record<UserRole, string> = {
   draughtsman: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
   bass: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
   helper: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  driver: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
 };
 
 interface EmployeeCardProps {
@@ -93,10 +94,10 @@ export function EmployeeCard({
           <span
             className={cn(
               'inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium',
-              roleBadgeColors[employee.role]
+              roleBadgeColors[employee.role || 'helper']
             )}
           >
-            {USER_ROLES[employee.role]?.label || employee.role}
+            {USER_ROLES[employee.role || 'helper']?.label || employee.role || 'Helper'}
           </span>
         </div>
 

@@ -51,6 +51,7 @@ const roleBadgeColors: Record<UserRole, string> = {
   draughtsman: 'bg-yellow-500/20 text-yellow-400',
   bass: 'bg-orange-500/20 text-orange-400',
   helper: 'bg-gray-500/20 text-gray-400',
+  driver: 'bg-teal-500/20 text-teal-400',
 };
 
 export function WorkerPayrollCard({

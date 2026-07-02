@@ -54,8 +54,8 @@ export {
   getWorkerSimpleAttendance,
   markSimpleAttendance,
   bulkMarkSimpleAttendance,
+  markDriverAttendance,
   getWorkerWeeklyAttendanceSummary,
-  getWorkerWeeklyAttendanceBySite,
   getDailySimpleAttendance,
   getSimpleAttendanceForDateRange,
 } from './attendance-service';
@@ -85,11 +85,8 @@ export {
   rejectAdvance,
   cancelAdvance,
   markAdvanceDeducted,
-  getAllPendingAdvances,
-  getPendingAdvancesByWorkerIds,
-  checkDuplicatePendingAdvance,
-  updateAdvanceRequest,
-  deleteAdvance,
+  toggleAdvanceDeductThisWeek,
+  getUndeductedAdvances,
 } from './advance-service';
 
 // Loan Service

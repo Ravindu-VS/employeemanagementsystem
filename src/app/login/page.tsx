@@ -17,6 +17,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useToast } from "@/hooks/use-toast";
 import { ROUTES, APP_CONFIG } from "@/constants";
 import { cn } from "@/lib/utils";
+import type { UserRole } from "@/types";
 
 /**
  * Login form validation schema
@@ -112,7 +113,7 @@ function LoginPageContent() {
       createAuditLog({
         userId: profile.uid,
         userName: profile.displayName || profile.email,
-        userRole: profile.role,
+        userRole: profile.role as UserRole,
         action: 'login',
         resource: 'auth',
         resourceId: profile.uid,

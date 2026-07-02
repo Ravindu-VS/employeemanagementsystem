@@ -48,7 +48,7 @@ const employeeSchema = z.object({
   email: z.string().email('Please enter a valid email'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   displayName: z.string().min(2, 'Name must be at least 2 characters'),
-  role: z.enum(['owner', 'ceo', 'manager', 'supervisor', 'draughtsman', 'bass', 'helper']),
+  role: z.enum(['owner', 'ceo', 'manager', 'supervisor', 'draughtsman', 'bass', 'helper', 'driver']),
   phone: z.string().optional(),
   address: z.string().optional(),
   employeeId: z.string().optional(),
@@ -146,7 +146,7 @@ export default function CreateEmployeePage() {
         createAuditLog({
           userId: profile.uid,
           userName: profile.displayName || profile.email,
-          userRole: profile.role,
+          userRole: profile.role as UserRole,
           action: 'create',
           resource: 'employees',
           resourceId: firebaseUser.uid,

@@ -33,6 +33,7 @@ import { createAuditLog } from '@/services/audit-service';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { ROUTES } from '@/constants';
+import type { UserRole } from '@/types';
 
 // Form validation schema
 const siteSchema = z.object({
@@ -110,7 +111,7 @@ export default function CreateSitePage() {
         createAuditLog({
           userId: profile.uid,
           userName: profile.displayName || profile.email,
-          userRole: profile.role,
+          userRole: profile.role as UserRole,
           action: 'create',
           resource: 'sites',
           resourceId: generatedCode,

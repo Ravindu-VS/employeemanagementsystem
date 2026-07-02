@@ -52,6 +52,12 @@ export async function signIn(
       throw new Error('User profile not found. Please contact administrator.');
     }
     
+    // Check if account is approved
+    if (profile.approved === false) {
+      await firebaseSignOut(auth);
+      throw new Error('Your account is awaiting approval from an administrator.');
+    }
+    
     if (!profile.isActive) {
       // Sign out inactive users
       await firebaseSignOut(auth);
@@ -97,13 +103,17 @@ async function createUserProfile(firebaseUser: FirebaseUser): Promise<{ profile:
       photoURL: firebaseUser.photoURL,
       workerId: '',
       phone: firebaseUser.phoneNumber || '',
-      role: isFirstUser ? 'owner' : 'helper',
-      isActive: isFirstUser, // First user is active, others need approval
+      role: isFirstUser ? 'owner' : null,     // No self-role selection
+      isActive: isFirstUser,                   // Only first user is active immediately
+      approved: isFirstUser,                   // Only first user is auto-approved
+      status: isFirstUser ? 'active' : 'pending', // Others wait for admin approval
+      payType: 'site_based',
       joiningDate: new Date(),
       assignedSites: [],
       dailyRate: 0,
       hourlyRate: 0,
       weeklyRate: 0,
+      otRate: 0,
       documents: [],
       metadata: {
         createdAt: new Date(),
@@ -128,7 +138,13 @@ async function createUserProfile(firebaseUser: FirebaseUser): Promise<{ profile:
       throw new Error('Failed to create user profile. Please try again.');
     }
   } else {
-    // Existing user - check if active
+    // Existing user - check if approved
+    if (!profile.approved) {
+      await firebaseSignOut(auth);
+      throw new Error('Your account is awaiting approval from an administrator.');
+    }
+    
+    // Check if active
     if (!profile.isActive) {
       await firebaseSignOut(auth);
       throw new Error('Your account is pending approval or has been deactivated. Please contact administrator.');

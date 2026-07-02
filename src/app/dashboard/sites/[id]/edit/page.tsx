@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { getSite, updateSite, getEmployeesByRole } from '@/services';
 import { createAuditLog } from '@/services/audit-service';
 import { ROUTES, SITE_STATUSES } from '@/constants';
+import type { UserRole } from '@/types';
 import { SiteStatus, UserProfile } from '@/types';
 import { useAuthStore } from '@/store/auth-store';
 import { 
@@ -91,7 +92,7 @@ export default function EditSitePage() {
         createAuditLog({
           userId: authProfile.uid,
           userName: authProfile.displayName || authProfile.email,
-          userRole: authProfile.role,
+          userRole: authProfile.role as UserRole,
           action: 'update',
           resource: 'sites',
           resourceId: siteId,

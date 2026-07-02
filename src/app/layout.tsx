@@ -1,15 +1,7 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Toaster } from "@/components/ui/toaster";
-
-// Font configuration
-const inter = Inter({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-inter",
-});
 
 // Metadata configuration
 export const metadata: Metadata = {
@@ -66,7 +58,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://www.googleapis.com" />
       </head>
       <body
-        className={`${inter.variable} font-sans antialiased min-h-screen bg-background`}
+        className="font-sans antialiased min-h-screen bg-background"
       >
         <Providers>
           {children}

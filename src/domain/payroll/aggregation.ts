@@ -132,11 +132,17 @@ export function buildAttendanceEntries(
     const isSupervisor = isHigherRoleMultiSite(role);
 
     if (isSupervisor) {
-      // Supervisor: each visited site counts per siteVisits array
+      // =====================================================
+      // SUPERVISOR PAYROLL LOGIC
+      // =====================================================
+      // Supervisor earnings are calculated PER SITE.
+      // Never merge multiple sites into one attendance day.
+      // Example: dailyRate=2000, visited 4 sites → 2000 × 4 = 8000
+      // =====================================================
       if (record.siteVisits && record.siteVisits.length > 0) {
-        // Debug: check all visits
+        // Primary path: use siteVisits array
         if (emp.uid && (emp.displayName?.includes('Kanchana') || emp.displayName?.includes('Nimal') || emp.displayName?.includes('Nishantha'))) {
-          console.log(`🔍 [DEBUG] Supervisor ${emp.displayName} on ${record.date} has ${record.siteVisits.length} visits:`, record.siteVisits);
+          console.log(`🔍 [SUPERVISOR PAYROLL] ${emp.displayName} on ${record.date} has ${record.siteVisits.length} visits:`, record.siteVisits);
         }
 
         for (const visit of record.siteVisits) {
@@ -154,37 +160,69 @@ export function buildAttendanceEntries(
                 dayFraction: 1.0, // Supervisor full day per site
               });
             } else {
-              // Log duplicate for debugging
               duplicatesFound.push(`Duplicate supervisor entry: ${emp.displayName || emp.email} @ ${visit.siteId} on ${record.date}`);
             }
           } else {
             // Visit not marked as visited - log this
             if (emp.uid && (emp.displayName?.includes('Kanchana') || emp.displayName?.includes('Nimal') || emp.displayName?.includes('Nishantha'))) {
-              console.warn(`⚠️ [DEBUG] Supervisor ${emp.displayName} has visit.visited=false for ${visit.siteId} on ${record.date}`);
+              console.warn(`⚠️ [SUPERVISOR PAYROLL] ${emp.displayName} has visit.visited=false for ${visit.siteId} on ${record.date}`);
             }
           }
         }
-      } else if (record.otHours && record.otHours > 0) {
-        // Fallback for supervisors with legacy otHours but no siteVisits
-        // Try to assign to morningSite or eveningSite if available
-        const fallbackSite = record.eveningSite || record.morningSite;
-        if (fallbackSite) {
-          const key = `${record.workerId}:${record.date}:${fallbackSite}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            entries.push({
-              workerId: record.workerId,
-              role,
-              date: record.date,
-              siteId: fallbackSite,
-              covered: true,
-              otHours: record.otHours,
-              dayFraction: 1.0, // Supervisor full day
-            });
-          } else {
-            duplicatesFound.push(`Duplicate supervisor fallback: ${emp.displayName || emp.email} @ ${fallbackSite} on ${record.date}`);
+      } else {
+        // =====================================================
+        // FALLBACK: Supervisors with morningSite/eveningSite but no siteVisits array
+        // This handles legacy records AND prevents supervisors from disappearing.
+        // =====================================================
+        const fallbackSites = new Set<string>();
+        if (record.morningSite) fallbackSites.add(record.morningSite);
+        if (record.eveningSite) fallbackSites.add(record.eveningSite);
+
+        if (fallbackSites.size > 0) {
+          console.log(`🔧 [SUPERVISOR PAYROLL FALLBACK] ${emp.displayName} on ${record.date}: using morningSite/eveningSite (${[...fallbackSites].join(', ')})`);
+          for (const siteId of fallbackSites) {
+            const key = `${record.workerId}:${record.date}:${siteId}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              entries.push({
+                workerId: record.workerId,
+                role,
+                date: record.date,
+                siteId: siteId,
+                covered: true,
+                otHours: record.siteOtHours?.[siteId] || record.otHours || 0,
+                dayFraction: 1.0, // Supervisor full day per site
+              });
+            } else {
+              duplicatesFound.push(`Duplicate supervisor fallback: ${emp.displayName || emp.email} @ ${siteId} on ${record.date}`);
+            }
           }
+        } else {
+          // No sites at all — still log the supervisor so they don't vanish
+          console.warn(`⚠️ [SUPERVISOR PAYROLL] ${emp.displayName} on ${record.date}: NO site data found — record skipped (but worker NOT dropped)`);
         }
+      }
+    } else if (record.attendanceType === 'driver' || role === 'driver') {
+      // =====================================================
+      // DRIVER PAYROLL LOGIC
+      // =====================================================
+      // Drivers do NOT belong to work sites.
+      // They appear under a virtual "Transportation Duties" site.
+      // Pay = dailySalary × daysWorked
+      // =====================================================
+      const driverSiteId = 'transportation_duties';
+      const key = `${record.workerId}:${record.date}:${driverSiteId}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        entries.push({
+          workerId: record.workerId,
+          role,
+          date: record.date,
+          siteId: driverSiteId,
+          covered: true,
+          otHours: record.otHours || 0,
+          dayFraction: 1.0, // Driver full day
+        });
       }
     } else {
       // Labor: morning/evening half-days
@@ -344,6 +382,45 @@ export function buildAttendanceEntries(
 }
 
 /**
+ * Calculate complete payroll combining everything
+ */
+export function calculatePayroll(
+  entries: AttendanceEntry[],
+  employeeMap: Map<string, UserProfile>,
+  siteNameMap: Map<string, string>,
+  advancesByEmployee: Map<string, any[]>
+): {
+  employeeSummaries: EmployeePayrollSummary[];
+  siteTotals: SitePayrollAggregate[];
+  grandTotals: PayrollGrandTotals;
+} {
+  // 1. Build per-employee summaries
+  const employeeSummaries = buildEmployeeSummaries(entries, employeeMap, siteNameMap, advancesByEmployee);
+
+  // 2. Build site aggregates
+  const siteTotals = buildSiteTotals(employeeSummaries);
+
+  // 3. Calculate selected advance deductions (only those marked for deduction this week)
+  let selectedAdvanceDeductions = 0;
+  for (const emp of employeeSummaries) {
+    for (const adv of emp.advances) {
+      if (adv.deductThisWeek !== false) {
+        selectedAdvanceDeductions += adv.amount;
+      }
+    }
+  }
+
+  // 4. Build grand totals
+  const grandTotals = buildGrandTotals(employeeSummaries, selectedAdvanceDeductions);
+
+  return {
+    employeeSummaries,
+    siteTotals,
+    grandTotals
+  };
+}
+
+/**
  * Build per-employee payroll summaries from attendance entries and employee data
  */
 export function buildEmployeeSummaries(
@@ -447,7 +524,7 @@ export function buildEmployeeSummaries(
     const siteBreakdowns: SiteBreakdown[] = Object.entries(data.sites)
       .map(([siteId, s]) => ({
         siteId,
-        siteName: siteNameMap.get(siteId) || siteId,
+        siteName: siteId === 'transportation_duties' ? 'Transportation Duties' : (siteNameMap.get(siteId) || siteId),
         daysWorked: s.daysWorked,
         otHours: s.otHours,
         regularPay: s.daysWorked * dailyRate,
@@ -469,7 +546,7 @@ export function buildEmployeeSummaries(
     summaries.push({
       employeeId: emp.uid,
       employeeName: emp.displayName || emp.email,
-      employeeRole: emp.role,
+      employeeRole: emp.role || 'helper',
       daysWorked: siteBreakdowns.reduce((s, b) => s + b.daysWorked, 0),
       otHours: siteBreakdowns.reduce((s, b) => s + b.otHours, 0),
       grossPay: siteBreakdowns.reduce((s, b) => s + b.totalPay, 0),

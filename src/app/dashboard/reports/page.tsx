@@ -9,7 +9,7 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
+import { 
   FileText,
   Calendar,
   Users,
@@ -33,14 +33,13 @@ import {
 } from '@/services';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { formatCurrency, cn } from '@/lib/utils';
-import { calculateOtRate } from '@/domain/payroll';
-import {
-  formatDate,
+import { 
+  formatDate, 
   getWeekNumber,
   toISODateString,
 } from '@/lib/date-utils';
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
-import type { UserProfile, SimpleAttendance, WorkSite } from '@/types';
+import type { UserProfile, SimpleAttendance } from '@/types';
 
 // Report types
 const reportTypes = [
@@ -155,11 +154,11 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Reports</h1>
+          <h1 className="text-2xl font-bold text-foreground">Reports</h1>
           <p className="text-muted-foreground">
             Generate and view various reports
           </p>
@@ -167,55 +166,55 @@ export default function ReportsPage() {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <Card className="bg-card/50">
-          <CardContent className="p-3 sm:p-4">
+          <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-blue-500/20 p-2">
                 <Users className="h-5 w-5 text-blue-400" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Active Employees</p>
-                <p className="text-xl sm:text-2xl font-bold">{activeEmployees}</p>
+                <p className="text-2xl font-bold">{activeEmployees}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-3 sm:p-4">
+          <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-green-500/20 p-2">
                 <Building2 className="h-5 w-5 text-green-400" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Active Sites</p>
-                <p className="text-xl sm:text-2xl font-bold">{sites.length}</p>
+                <p className="text-2xl font-bold">{sites.length}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-3 sm:p-4">
+          <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-purple-500/20 p-2">
                 <Calendar className="h-5 w-5 text-purple-400" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Current Week</p>
-                <p className="text-xl sm:text-2xl font-bold">Week {weekNumber}</p>
+                <p className="text-2xl font-bold">Week {weekNumber}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-3 sm:p-4">
+          <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-orange-500/20 p-2">
                 <FileText className="h-5 w-5 text-orange-400" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Attendance Records</p>
-                <p className="text-xl sm:text-2xl font-bold">{attendance.length}</p>
+                <p className="text-2xl font-bold">{attendance.length}</p>
               </div>
             </div>
           </CardContent>
@@ -224,8 +223,8 @@ export default function ReportsPage() {
 
       {/* Date Range Selector */}
       <Card className="bg-card/50">
-        <CardContent className="p-3 sm:p-4">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between md:justify-between">
+        <CardContent className="p-4">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2">
               <Calendar className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium">Date Range:</span>
@@ -435,7 +434,6 @@ function ReportDisplay({
           <PayrollSummaryReport
             employees={employees}
             attendance={attendance}
-            sites={sites}
           />
         )}
         {reportId === 'employee-report' && (
@@ -511,17 +509,17 @@ function AttendanceSummaryReport({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-3 sm:p-4">
+      <div className="grid grid-cols-3 gap-4">
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-xl sm:text-2xl font-bold text-blue-500">{attendance.length}</p>
+          <p className="text-2xl font-bold text-blue-500">{attendance.length}</p>
           <p className="text-sm text-muted-foreground">Total Records</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-xl sm:text-2xl font-bold text-green-500">{employeeAttendance.length}</p>
+          <p className="text-2xl font-bold text-green-500">{employeeAttendance.length}</p>
           <p className="text-sm text-muted-foreground">Employees Tracked</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-xl sm:text-2xl font-bold text-orange-500">
+          <p className="text-2xl font-bold text-orange-500">
             {employeeAttendance.reduce((sum, e) => sum + e.otHours, 0).toFixed(1)}
           </p>
           <p className="text-sm text-muted-foreground">Total OT Hours</p>
@@ -573,94 +571,59 @@ function AttendanceSummaryReport({
 function PayrollSummaryReport({
   employees,
   attendance,
-  sites,
 }: {
   employees: UserProfile[];
   attendance: SimpleAttendance[];
-  sites: WorkSite[];
 }) {
-  const siteNameMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    sites.forEach(s => { map[s.id] = s.name; });
-    return map;
-  }, [sites]);
-
-  const { workerData, siteAggregates, grandTotal } = useMemo(() => {
+  const payrollData = useMemo(() => {
     const employeeMap: Record<string, UserProfile> = {};
-    employees.forEach(e => {
-      employeeMap[e.uid] = e;
-      if (e.workerId) employeeMap[e.workerId] = e;
-    });
+    employees.forEach(e => { employeeMap[e.uid] = e; });
 
-    // worker → site → { days, ot }
-    const workerSiteMap: Record<string, {
+    const workerTotals: Record<string, {
       name: string;
+      daysWorked: number;
+      halfDays: number;
+      otHours: number;
       dailyRate: number;
       otRate: number;
-      sites: Record<string, { daysWorked: number; otHours: number }>;
     }> = {};
 
     attendance.forEach(record => {
-      const emp = employeeMap[record.workerId];
-      const dailyRate = emp?.dailyRate || 0;
-      if (!workerSiteMap[record.workerId]) {
-        workerSiteMap[record.workerId] = {
+      if (!workerTotals[record.workerId]) {
+        const emp = employeeMap[record.workerId];
+        workerTotals[record.workerId] = {
           name: record.workerName,
-          dailyRate,
-          otRate: calculateOtRate(dailyRate),
-          sites: {},
+          daysWorked: 0,
+          halfDays: 0,
+          otHours: 0,
+          dailyRate: emp?.dailyRate || 0,
+          otRate: emp?.otRate || 0,
         };
       }
-      const w = workerSiteMap[record.workerId];
-
-      const morSite = record.morningSite;
-      const eveSite = record.eveningSite;
-
-      if (morSite) {
-        if (!w.sites[morSite]) w.sites[morSite] = { daysWorked: 0, otHours: 0 };
-        w.sites[morSite].daysWorked += 0.5;
+      const hasMorning = !!record.morningSite;
+      const hasEvening = !!record.eveningSite;
+      if (hasMorning && hasEvening) {
+        workerTotals[record.workerId].daysWorked++;
+      } else if (hasMorning || hasEvening) {
+        workerTotals[record.workerId].halfDays++;
       }
-      if (eveSite) {
-        if (!w.sites[eveSite]) w.sites[eveSite] = { daysWorked: 0, otHours: 0 };
-        w.sites[eveSite].daysWorked += 0.5;
-      }
-      const ot = record.otHours || 0;
-      if (ot > 0) {
-        const otSite = eveSite || morSite;
-        if (otSite) {
-          if (!w.sites[otSite]) w.sites[otSite] = { daysWorked: 0, otHours: 0 };
-          w.sites[otSite].otHours += ot;
-        }
-      }
+      workerTotals[record.workerId].otHours += record.otHours || 0;
     });
 
-    // Build display data
-    const workerData = Object.entries(workerSiteMap).map(([workerId, w]) => {
-      const siteBreakdowns = Object.entries(w.sites).map(([siteId, s]) => {
-        const pay = s.daysWorked * w.dailyRate + s.otHours * w.otRate;
-        return { siteId, siteName: siteNameMap[siteId] || `Site ${siteId.substring(0, 6)}`, ...s, pay };
-      });
-      const totalPay = siteBreakdowns.reduce((sum, s) => sum + s.pay, 0);
-      return { workerId, name: w.name, siteBreakdowns, totalPay };
-    }).sort((a, b) => b.totalPay - a.totalPay);
+    return Object.entries(workerTotals)
+      .map(([workerId, data]) => {
+        const regularPay = (data.daysWorked * data.dailyRate) + (data.halfDays * data.dailyRate * 0.5);
+        const otPay = data.otHours * data.otRate;
+        return { workerId, ...data, regularPay, otPay, totalPay: regularPay + otPay };
+      })
+      .sort((a, b) => b.totalPay - a.totalPay);
+  }, [employees, attendance]);
 
-    // Site aggregates
-    const siteAgg: Record<string, number> = {};
-    workerData.forEach(w => {
-      w.siteBreakdowns.forEach(sb => {
-        siteAgg[sb.siteId] = (siteAgg[sb.siteId] || 0) + sb.pay;
-      });
-    });
-    const siteAggregates = Object.entries(siteAgg)
-      .map(([siteId, total]) => ({ siteId, siteName: siteNameMap[siteId] || `Site ${siteId.substring(0, 6)}`, total }))
-      .sort((a, b) => b.total - a.total);
+  const grandTotal = payrollData.reduce((sum, p) => sum + p.totalPay, 0);
+  const totalRegular = payrollData.reduce((sum, p) => sum + p.regularPay, 0);
+  const totalOT = payrollData.reduce((sum, p) => sum + p.otPay, 0);
 
-    const grandTotal = workerData.reduce((sum, w) => sum + w.totalPay, 0);
-
-    return { workerData, siteAggregates, grandTotal };
-  }, [employees, attendance, siteNameMap]);
-
-  if (workerData.length === 0) {
+  if (payrollData.length === 0) {
     return (
       <div className="flex h-40 items-center justify-center text-muted-foreground">
         No payroll data available for this period
@@ -669,65 +632,57 @@ function PayrollSummaryReport({
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      {/* Worker Payroll Breakdown */}
-      <div>
-        <h3 className="mb-3 font-semibold text-foreground">Worker Payroll Report</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left">
-                <th className="p-3 font-medium text-muted-foreground">Employee</th>
-                <th className="p-3 font-medium text-muted-foreground">Site</th>
-                <th className="p-3 font-medium text-muted-foreground text-center">Days</th>
-                <th className="p-3 font-medium text-muted-foreground text-center">OT Hrs</th>
-                <th className="p-3 font-medium text-muted-foreground text-right">Amount</th>
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-4">
+        <div className="rounded-lg border border-border p-3 text-center">
+          <p className="text-2xl font-bold text-green-500">{formatCurrency(totalRegular)}</p>
+          <p className="text-sm text-muted-foreground">Regular Pay</p>
+        </div>
+        <div className="rounded-lg border border-border p-3 text-center">
+          <p className="text-2xl font-bold text-orange-500">{formatCurrency(totalOT)}</p>
+          <p className="text-sm text-muted-foreground">OT Pay</p>
+        </div>
+        <div className="rounded-lg border border-border p-3 text-center">
+          <p className="text-2xl font-bold text-blue-500">{formatCurrency(grandTotal)}</p>
+          <p className="text-sm text-muted-foreground">Total Payroll</p>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border text-left">
+              <th className="p-3 font-medium text-muted-foreground">Employee</th>
+              <th className="p-3 font-medium text-muted-foreground text-center">Days</th>
+              <th className="p-3 font-medium text-muted-foreground text-center">OT Hrs</th>
+              <th className="p-3 font-medium text-muted-foreground text-right">Regular</th>
+              <th className="p-3 font-medium text-muted-foreground text-right">OT Pay</th>
+              <th className="p-3 font-medium text-muted-foreground text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payrollData.map((emp) => (
+              <tr key={emp.workerId} className="border-b border-border/50">
+                <td className="p-3 font-medium">{emp.name}</td>
+                <td className="p-3 text-center">
+                  {emp.daysWorked}{emp.halfDays > 0 ? ` + ${emp.halfDays}½` : ''}
+                </td>
+                <td className="p-3 text-center">{emp.otHours.toFixed(1)}</td>
+                <td className="p-3 text-right">{formatCurrency(emp.regularPay)}</td>
+                <td className="p-3 text-right">{formatCurrency(emp.otPay)}</td>
+                <td className="p-3 text-right font-semibold">{formatCurrency(emp.totalPay)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {workerData.map((worker) => (
-                <>
-                  {worker.siteBreakdowns.map((sb, idx) => (
-                    <tr key={`${worker.workerId}-${sb.siteId}`} className="border-b border-border/30">
-                      {idx === 0 && (
-                        <td className="p-3 font-medium" rowSpan={worker.siteBreakdowns.length + 1}>
-                          {worker.name}
-                        </td>
-                      )}
-                      <td className="p-3 text-muted-foreground">{sb.siteName}</td>
-                      <td className="p-3 text-center">{sb.daysWorked}</td>
-                      <td className="p-3 text-center">{sb.otHours > 0 ? sb.otHours.toFixed(1) : '—'}</td>
-                      <td className="p-3 text-right">{formatCurrency(sb.pay)}</td>
-                    </tr>
-                  ))}
-                  <tr key={`${worker.workerId}-total`} className="border-b border-border bg-muted/20">
-                    <td className="p-3 font-semibold text-right" colSpan={3}>Worker Total</td>
-                    <td className="p-3 text-right font-bold text-green-500">{formatCurrency(worker.totalPay)}</td>
-                  </tr>
-                </>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Site Totals */}
-      <div>
-        <h3 className="mb-3 font-semibold text-foreground">Site Summary</h3>
-        <div className="grid gap-3 md:grid-cols-3">
-          {siteAggregates.map(sa => (
-            <div key={sa.siteId} className="rounded-lg border border-border p-3">
-              <p className="text-sm text-muted-foreground">{sa.siteName}</p>
-              <p className="text-xl font-bold text-blue-500">{formatCurrency(sa.total)}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Grand Total */}
-      <div className="rounded-lg border-2 border-green-500/30 bg-green-500/5 p-4 text-center">
-        <p className="text-sm text-muted-foreground">Grand Total Payroll</p>
-        <p className="text-3xl font-bold text-green-500">{formatCurrency(grandTotal)}</p>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-border font-bold">
+              <td className="p-3" colSpan={3}>Grand Total</td>
+              <td className="p-3 text-right">{formatCurrency(totalRegular)}</td>
+              <td className="p-3 text-right">{formatCurrency(totalOT)}</td>
+              <td className="p-3 text-right">{formatCurrency(grandTotal)}</td>
+            </tr>
+          </tfoot>
+        </table>
       </div>
     </div>
   );
@@ -744,25 +699,26 @@ function EmployeeReport({ employees }: { employees: UserProfile[] }) {
   const roleGroups = useMemo(() => {
     const groups: Record<string, UserProfile[]> = {};
     employees.forEach(emp => {
-      if (!groups[emp.role]) groups[emp.role] = [];
-      groups[emp.role].push(emp);
+      const r = emp.role || 'helper';
+      if (!groups[r]) groups[r] = [];
+      groups[r].push(emp);
     });
     return groups;
   }, [employees]);
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-3 sm:p-4">
+      <div className="grid grid-cols-3 gap-4">
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-xl sm:text-2xl font-bold text-blue-500">{employees.length}</p>
+          <p className="text-2xl font-bold text-blue-500">{employees.length}</p>
           <p className="text-sm text-muted-foreground">Total Employees</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-xl sm:text-2xl font-bold text-green-500">{activeEmployees.length}</p>
+          <p className="text-2xl font-bold text-green-500">{activeEmployees.length}</p>
           <p className="text-sm text-muted-foreground">Active</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-xl sm:text-2xl font-bold text-red-500">{inactiveEmployees.length}</p>
+          <p className="text-2xl font-bold text-red-500">{inactiveEmployees.length}</p>
           <p className="text-sm text-muted-foreground">Inactive</p>
         </div>
       </div>
@@ -919,18 +875,17 @@ function OvertimeReport({
     const workerOT: Record<string, { name: string; otHours: number; otRate: number; days: number }> = {};
 
     attendance.forEach(record => {
-      if ((record.otHours || 0) > 0) {
+      if (record.otHours > 0) {
         if (!workerOT[record.workerId]) {
           const emp = employeeMap[record.workerId];
-          const dailyRate = emp?.dailyRate || 0;
           workerOT[record.workerId] = {
             name: record.workerName,
             otHours: 0,
-            otRate: calculateOtRate(dailyRate),
+            otRate: emp?.otRate || 0,
             days: 0,
           };
         }
-        workerOT[record.workerId].otHours += (record.otHours || 0);
+        workerOT[record.workerId].otHours += record.otHours;
         workerOT[record.workerId].days++;
       }
     });
@@ -957,17 +912,17 @@ function OvertimeReport({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-3 sm:p-4">
+      <div className="grid grid-cols-3 gap-4">
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-xl sm:text-2xl font-bold text-orange-500">{totalOTHours.toFixed(1)}</p>
+          <p className="text-2xl font-bold text-orange-500">{totalOTHours.toFixed(1)}</p>
           <p className="text-sm text-muted-foreground">Total OT Hours</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-xl sm:text-2xl font-bold text-green-500">{formatCurrency(totalOTPay)}</p>
+          <p className="text-2xl font-bold text-green-500">{formatCurrency(totalOTPay)}</p>
           <p className="text-sm text-muted-foreground">Total OT Pay</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-xl sm:text-2xl font-bold text-blue-500">{overtimeData.length}</p>
+          <p className="text-2xl font-bold text-blue-500">{overtimeData.length}</p>
           <p className="text-sm text-muted-foreground">Employees with OT</p>
         </div>
       </div>
@@ -1026,21 +981,21 @@ function FinancialSummaryReport({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-xl sm:text-2xl font-bold text-yellow-500">{pendingAdvances.length}</p>
+          <p className="text-2xl font-bold text-yellow-500">{pendingAdvances.length}</p>
           <p className="text-sm text-muted-foreground">Pending Advances</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-xl sm:text-2xl font-bold text-orange-500">{formatCurrency(totalPendingAdvances)}</p>
+          <p className="text-2xl font-bold text-orange-500">{formatCurrency(totalPendingAdvances)}</p>
           <p className="text-sm text-muted-foreground">Advance Amount</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-xl sm:text-2xl font-bold text-blue-500">{activeLoans.length}</p>
+          <p className="text-2xl font-bold text-blue-500">{activeLoans.length}</p>
           <p className="text-sm text-muted-foreground">Active Loans</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-xl sm:text-2xl font-bold text-red-500">{formatCurrency(totalActiveLoanBalance)}</p>
+          <p className="text-2xl font-bold text-red-500">{formatCurrency(totalActiveLoanBalance)}</p>
           <p className="text-sm text-muted-foreground">Outstanding Loan Balance</p>
         </div>
       </div>

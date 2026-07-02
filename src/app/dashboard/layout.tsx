@@ -50,7 +50,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         onOpenChange={setDrawerOpen}
         collapsed={sidebarCollapsed}
         onCollapsedChange={setSidebarCollapsed}
-        userRole={profile.role}
+        userRole={profile.role as import("@/types").UserRole}
       />
 
       {/* Desktop sidebar (hidden on mobile, visible on md+) */}
@@ -58,7 +58,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <Sidebar
           collapsed={sidebarCollapsed}
           onCollapsedChange={setSidebarCollapsed}
-          userRole={profile.role}
+          userRole={profile.role as import("@/types").UserRole}
         />
       </div>
 

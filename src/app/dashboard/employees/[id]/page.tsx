@@ -10,8 +10,8 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import {
-  ArrowLeft,
+import { 
+  ArrowLeft, 
   Edit,
   Trash2,
   Mail,
@@ -38,7 +38,6 @@ import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { formatDate } from '@/lib/date-utils';
 import { formatCurrency, cn } from '@/lib/utils';
-import { calculateOtRate } from '@/domain/payroll';
 import { ROUTES, USER_ROLES } from '@/constants';
 import type { UserRole } from '@/types';
 
@@ -51,6 +50,7 @@ const roleBadgeColors: Record<UserRole, string> = {
   draughtsman: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
   bass: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
   helper: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  driver: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
 };
 
 export default function EmployeeDetailPage() {
@@ -120,7 +120,7 @@ export default function EmployeeDetailPage() {
         createAuditLog({
           userId: profile.uid,
           userName: profile.displayName || profile.email,
-          userRole: profile.role,
+          userRole: profile.role as UserRole,
           action: 'update',
           resource: 'employees',
           resourceId: employee.uid,
@@ -148,7 +148,7 @@ export default function EmployeeDetailPage() {
         createAuditLog({
           userId: profile.uid,
           userName: profile.displayName || profile.email,
-          userRole: profile.role,
+          userRole: profile.role as UserRole,
           action: 'delete',
           resource: 'employees',
           resourceId: employee.uid,
@@ -218,9 +218,9 @@ export default function EmployeeDetailPage() {
                 </h1>
                 <span className={cn(
                   'inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium',
-                  roleBadgeColors[employee.role]
+                  roleBadgeColors[employee.role || 'helper']
                 )}>
-                  {USER_ROLES[employee.role]?.label || employee.role}
+                  {USER_ROLES[employee.role || 'helper']?.label || employee.role || 'Helper'}
                 </span>
                 <span className={cn(
                   'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
@@ -404,9 +404,9 @@ export default function EmployeeDetailPage() {
             <div className="flex items-center gap-3">
               <Clock className="h-4 w-4 text-muted-foreground" />
               <div>
-                <p className="text-sm text-muted-foreground">OT Rate (Auto-calculated)</p>
+                <p className="text-sm text-muted-foreground">OT Rate (per hour)</p>
                 <p className="font-medium">
-                  {formatCurrency(calculateOtRate(employee.dailyRate || 0))} / hour
+                  {formatCurrency(employee.otRate || (employee.dailyRate || 0) * 1.5 / 8)}
                 </p>
               </div>
             </div>
@@ -415,7 +415,7 @@ export default function EmployeeDetailPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Role Level</p>
                 <p className="font-medium">
-                  Level {USER_ROLES[employee.role]?.level || 0}
+                  Level {USER_ROLES[employee.role || 'helper']?.level || 0}
                 </p>
               </div>
             </div>

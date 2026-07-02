@@ -50,9 +50,10 @@ import {
   DEFAULT_PAYROLL_SETTINGS,
   DEFAULT_ATTENDANCE_SETTINGS,
   DEFAULT_NOTIFICATION_SETTINGS,
-  createAuditLog,
 } from '@/services';
+import { createAuditLog } from '@/services/audit-service';
 import { useToast } from '@/components/ui/use-toast';
+import type { UserRole } from '@/types';
 import { cn } from '@/lib/utils';
 import type {
   CompanySettings,
@@ -183,7 +184,7 @@ export default function SettingsPage() {
           await createAuditLog({
             userId: user.uid,
             userName: profile.displayName || user.email || '',
-            userRole: profile.role,
+            userRole: profile.role as UserRole,
             action: 'update',
             resource: 'settings/company',
             resourceId: 'company',
@@ -196,7 +197,7 @@ export default function SettingsPage() {
           await createAuditLog({
             userId: user.uid,
             userName: profile.displayName || user.email || '',
-            userRole: profile.role,
+            userRole: profile.role as UserRole,
             action: 'update',
             resource: 'settings/payroll',
             resourceId: 'payroll',
@@ -209,7 +210,7 @@ export default function SettingsPage() {
           await createAuditLog({
             userId: user.uid,
             userName: profile.displayName || user.email || '',
-            userRole: profile.role,
+            userRole: profile.role as UserRole,
             action: 'update',
             resource: 'settings/attendance',
             resourceId: 'attendance',
@@ -222,7 +223,7 @@ export default function SettingsPage() {
           await createAuditLog({
             userId: user.uid,
             userName: profile.displayName || user.email || '',
-            userRole: profile.role,
+            userRole: profile.role as UserRole,
             action: 'update',
             resource: 'settings/notifications',
             resourceId: 'notifications',

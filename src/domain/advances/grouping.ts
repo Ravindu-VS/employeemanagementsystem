@@ -78,6 +78,7 @@ export function groupAdvancesByEmployee(
       status: adv.status,
       deducted: isDed,
       deductionWeek: (adv as any).deductionWeek || (adv as any).deductionWeekId || null,
+      deductThisWeek: adv.deductThisWeek ?? true, // Default to true for backward compatibility
     };
 
     // Group by employeeId

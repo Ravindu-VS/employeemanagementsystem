@@ -18,6 +18,8 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  UserCheck,
+  Truck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { signOut } from "@/lib/firebase/auth";
@@ -41,7 +43,13 @@ const navItems = [
     title: "Dashboard",
     href: ROUTES.DASHBOARD,
     icon: LayoutDashboard,
-    roles: ['owner', 'ceo', 'manager', 'supervisor', 'draughtsman', 'bass', 'helper'],
+    roles: ['owner', 'ceo', 'manager', 'supervisor', 'draughtsman', 'bass', 'helper', 'driver'],
+  },
+  {
+    title: "User Approvals",
+    href: ROUTES.USER_APPROVALS,
+    icon: UserCheck,
+    roles: ['owner', 'ceo'],
   },
   {
     title: "Employees",
@@ -59,7 +67,7 @@ const navItems = [
     title: "Attendance",
     href: ROUTES.ATTENDANCE.LIST,
     icon: Clock,
-    roles: ['owner', 'ceo', 'manager', 'supervisor'],
+    roles: ['owner', 'ceo', 'manager', 'supervisor', 'driver'],
   },
   {
     title: "Payroll",

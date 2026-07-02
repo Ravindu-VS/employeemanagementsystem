@@ -21,7 +21,8 @@ export type UserRole =
   | 'supervisor'
   | 'draughtsman'
   | 'bass'
-  | 'helper';
+  | 'helper'
+  | 'driver';
 
 /**
  * Authentication status
@@ -36,8 +37,10 @@ export interface User {
   email: string;
   displayName: string | null;
   photoURL: string | null;
-  role: UserRole;
+  role: UserRole | null;
   isActive: boolean;
+  approved: boolean;
+  status: 'pending' | 'active' | 'rejected';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -57,14 +60,20 @@ export interface UserProfile extends User {
   departmentId?: string;
   supervisorId?: string;
   assignedSites: string[];
-  dailyRate: number;   // Per day payment (REQUIRED)
-  otRate?: number;     // DEPRECATED: OT rate now derived as dailyRate / 8 at runtime
-  hourlyRate?: number; // Legacy / calculated
-  weeklyRate?: number; // Legacy / calculated
+  dailyRate: number;   // Per day payment
+  otRate: number;      // OT hourly rate
+  hourlyRate: number;  // Legacy / calculated
+  weeklyRate: number;  // Legacy / calculated
+  payType: PayType;    // Payment model
   bankDetails?: BankDetails;
   documents: UserDocument[];
   metadata: UserMetadata;
 }
+
+/**
+ * Employee pay type — determines payroll calculation model
+ */
+export type PayType = 'site_based' | 'daily_based' | 'monthly_based';
 
 export interface BankDetails {
   bankName: string;
@@ -210,37 +219,62 @@ export type SegmentStatus =
  * - OT hours (number)
  * A worker can work TWO different sites in the same day.
  */
-/**
- * Supervisor visit record for multi-site tracking
- */
-export interface SimpleSupervisorVisit {
-  siteId: string;
-  visited: boolean;
-  notes?: string;
-  visitedAt: string; // ISO timestamp
-}
-
 export interface SimpleAttendance {
   id: string;
   date: string; // YYYY-MM-DD
   workerId: string;
   workerName: string;
-  role?: string; // NEW: role to determine attendance structure
-
-  // For LABOR WORKERS (bass, helper, draughtsman)
-  morningSite?: string | null;  // siteId or null if absent
-  eveningSite?: string | null;  // siteId or null if absent
-  siteOtHours?: Record<string, number>; // Record of siteId to OT hours
-
-  // For SUPERVISORS (owner, ceo, manager, supervisor)
-  // use siteVisits array instead of morning/evening
-  siteVisits?: SimpleSupervisorVisit[];
-
-  otHours?: number;             // overtime hours
+  morningSite: string | null;  // siteId or null if absent
+  eveningSite: string | null;  // siteId or null if absent
+  otHours: number;             // overtime hours
   supervisorId: string;
   notes?: string;
+  // Extended fields for multi-site supervisors
+  role?: string;               // worker role for attendance logic
+  siteVisits?: SiteVisit[];    // supervisor multi-site visits
+  siteOtHours?: Record<string, number>; // per-site OT hours
+  attendanceType?: 'site' | 'driver';   // attendance model
   createdAt: Date;
   updatedAt: Date;
+}
+
+/**
+ * Site visit entry for supervisor multi-site attendance
+ */
+export interface SiteVisit {
+  siteId: string;
+  visited: boolean;
+}
+
+/**
+ * Driver daily attendance record (no site association)
+ * Drivers are paid per day and do NOT belong to work sites.
+ */
+export interface DriverAttendance {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  date: string;       // YYYY-MM-DD
+  present: boolean;
+  otHours: number;
+  remarks?: string;
+  role: 'driver';
+  attendanceType: 'driver';
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Per-site payroll breakdown for an employee
+ */
+export interface SiteBreakdown {
+  siteId: string;
+  siteName: string;
+  daysWorked: number;
+  otHours: number;
+  regularPay: number;
+  otPay: number;
+  totalPay: number;
 }
 
 /**
@@ -280,9 +314,6 @@ export interface WeeklyPayroll {
   overtimeEarnings: number;
   bonuses: BonusEntry[];
   totalEarnings: number;
-  
-  // Per-site breakdown (added for multi-site support)
-  siteBreakdowns?: SiteBreakdown[];
   
   // Deductions
   advances: AdvanceDeduction[];
@@ -351,106 +382,11 @@ export type PaymentMethod =
   | 'upi';
 
 // =====================================================
-// PER-SITE PAYROLL TYPES
-// =====================================================
-
-/**
- * Breakdown of one worker's attendance & pay at a single site
- */
-export interface SiteBreakdown {
-  siteId: string;
-  siteName: string;
-  daysWorked: number;   // 0.5 increments (morning/evening)
-  otHours: number;
-  regularPay: number;   // daysWorked × dailyRate
-  otPay: number;        // otHours × otRate
-  totalPay: number;     // regularPay + otPay
-}
-
-/**
- * Full payroll summary for one worker (across all sites)
- */
-export interface WorkerPayrollSummary {
-  workerId: string;
-  workerName: string;
-  workerRole: UserRole;
-  dailyRate: number;
-  otRate: number;        // DERIVED: dailyRate / 8 (not stored)
-  siteBreakdowns: SiteBreakdown[];
-  totalDays: number;
-  totalOtHours: number;
-  grossSalary: number;
-  advances: AdvanceRequest[];   // un-deducted advances
-  totalAdvanceDeduction: number;
-  finalSalary: number;
-}
-
-/**
- * Aggregated payroll total for one site
- */
-export interface SitePayrollTotal {
-  siteId: string;
-  siteName: string;
-  totalPayroll: number;
-  workerCount: number;
-}
-
-/**
- * Complete payroll report with workers, site totals, and grand total
- */
-export interface PayrollReport {
-  workers: WorkerPayrollSummary[];
-  siteTotals: SitePayrollTotal[];
-  grandTotal: number;
-}
-
-// =====================================================
 // ADVANCE & LOAN TYPES
 // =====================================================
 
-export interface Advance {
-  id: string;
-  workerId: string;
-  amount: number;
-  date: string;
-  reason: string;
-  deducted: boolean;
-  deductionWeek: string | null;
-  createdBy?: string;
-  createdAt?: Date;
-}
-
-export interface WorkerWeeklyPayroll {
-  workerId: string;
-  workerName: string;
-  role: string;
-  grossPay: number;
-  pendingAdvances: Advance[];
-  selectedAdvanceDeductions: Advance[];
-  advanceDeductionTotal: number;
-  loanDeduction: number;
-  finalPay: number;
-}
-
-export interface FinalPayrollSummary {
-  totalWorkers: number;
-  totalDaysWorked: number;
-  totalOtHours: number;
-  totalBasePay: number;
-  totalOtPay: number;
-  totalGrossPay: number;
-  totalAdvanceDeductions: number;
-  totalLoanDeductions: number;
-  finalPayrollTotal: number;
-}
-
 /**
  * Salary advance request
- *
- * Business Rules:
- * - status: "pending" (awaiting approval) → "approved" (eligible) → "rejected" (hidden)
- * - deducted: false (eligible for payroll) → true (already deducted, hidden from future weeks)
- * - deductionWeek: which week it was deducted (audit trail)
  */
 export interface AdvanceRequest {
   id: string;
@@ -460,14 +396,30 @@ export interface AdvanceRequest {
   reason: string;
   requestedAt: Date;
   status: RequestStatus;
+  advanceStatus: AdvanceStatus;
   reviewedBy?: string;
   reviewedAt?: Date;
   reviewNotes?: string;
-  deducted: boolean;           // true = already deducted, hide from future weeks
-  deductionWeek: string | null; // ISO date when deducted (e.g. "2026-03-23")
+  deductionWeekId?: string; // Week when deducted (legacy)
+  isDeducted: boolean;      // Legacy field
+  deducted: boolean;        // Whether fully deducted from payroll
+  deductedWeek?: string;    // YYYY-MM-DD of the week it was deducted
+  carryForward: boolean;    // Whether carried forward to next week
+  deductThisWeek?: boolean; // CEO's per-payroll checkbox selection
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * Advance lifecycle states.
+ * Once deducted, it must NEVER appear again unless manually reopened by Owner.
+ */
+export type AdvanceStatus =
+  | 'pending'
+  | 'approved'
+  | 'partially_deducted'
+  | 'fully_deducted'
+  | 'carried_forward';
 
 /**
  * Employee loan
@@ -569,7 +521,11 @@ export type AuditAction =
   | 'logout'
   | 'approve'
   | 'reject'
-  | 'export';
+  | 'export'
+  | 'user_approved'
+  | 'user_rejected'
+  | 'advance_deducted'
+  | 'advance_carried_forward';
 
 // =====================================================
 // API RESPONSE TYPES
@@ -770,9 +726,13 @@ export const AUDIT_EVENTS = {
   ADVANCE_CREATED: 'ADVANCE_CREATED',
   ADVANCE_APPROVED: 'ADVANCE_APPROVED',
   ADVANCE_REJECTED: 'ADVANCE_REJECTED',
+  ADVANCE_DEDUCTED: 'ADVANCE_DEDUCTED',
+  ADVANCE_CARRIED_FORWARD: 'ADVANCE_CARRIED_FORWARD',
   LOAN_CREATED: 'LOAN_CREATED',
   LOAN_APPROVED: 'LOAN_APPROVED',
   USER_LOGIN: 'USER_LOGIN',
+  USER_APPROVED: 'USER_APPROVED',
+  USER_REJECTED: 'USER_REJECTED',
   SETTINGS_UPDATED: 'SETTINGS_UPDATED',
 } as const;
 

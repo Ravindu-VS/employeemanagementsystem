@@ -1,4 +1,4 @@
-﻿import { UserRole, UserProfile } from "@/types";
+import { UserRole, UserProfile } from "@/types";
 
 /**
  * Defines which roles are considered "Higher Management" or "Supervisors".
@@ -10,7 +10,7 @@ export const HIGHER_ROLES = ["owner", "ceo", "manager", "supervisor"] as const;
  * Defines which roles are considered "Labor".
  * They have half-day (morning/evening) attendance logic.
  */
-export const LABOR_ROLES = ["draughtsman", "bass", "helper"] as const;
+export const LABOR_ROLES = ["draughtsman", "bass", "helper", "driver"] as const;
 
 /**
  * Checks if a role requires higher-role multi-site attendance.

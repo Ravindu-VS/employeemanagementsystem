@@ -62,6 +62,7 @@ const roleBadgeColors: Record<UserRole, string> = {
   draughtsman: 'bg-yellow-500/20 text-yellow-400',
   bass: 'bg-orange-500/20 text-orange-400',
   helper: 'bg-gray-500/20 text-gray-400',
+  driver: 'bg-teal-500/20 text-teal-400',
 };
 
 // Worker row state for the marking UI
@@ -86,6 +87,7 @@ export default function AttendancePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [workerRows, setWorkerRows] = useState<WorkerAttendanceRow[]>([]);
   const [isDirty, setIsDirty] = useState(false);
+  const [activeTab, setActiveTab] = useState('site');
 
   // Guard against re-initializing editable rows every render
   const initializedKeyRef = useRef<string | null>(null);
@@ -180,13 +182,14 @@ export default function AttendancePage() {
     }
 
     // Get employees assigned to this site (or all if none specifically assigned)
+    // NEVER include drivers in site attendance
     const siteEmployees = employees.filter(
-      (e) => e.assignedSites?.includes(selectedSiteId) || e.assignedSites?.length === 0
+      (e) => e.role !== 'driver' && (e.assignedSites?.includes(selectedSiteId) || e.assignedSites?.length === 0)
     );
 
     const rows: WorkerAttendanceRow[] = siteEmployees.map((emp) => {
       const existing = siteAttendanceMap.get(emp.workerId || emp.uid);
-      const isSupervisor = ['owner', 'ceo', 'manager', 'supervisor'].includes(emp.role);
+      const isSupervisor = ['owner', 'ceo', 'manager', 'supervisor'].includes(emp.role || '');
 
       // For supervisors: check if siteId is in siteVisits array
       // For labor: check if siteId matches morningSite or eveningSite
@@ -205,7 +208,7 @@ export default function AttendancePage() {
       return {
         workerId: emp.workerId || emp.uid,
         workerName: emp.displayName || emp.email,
-        role: emp.role,
+        role: emp.role || 'helper',
         morning,
         evening,
         otHours: existing ? extractOtHours(existing, selectedSiteId) : 0,
@@ -418,14 +421,32 @@ export default function AttendancePage() {
         </div>
       </div>
 
-      {/* Site Selector */}
-      <Card>
-        <CardContent className="p-3 sm:p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-            <div className="flex items-center gap-2 shrink-0">
-              <MapPin className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
-              <label className="font-medium text-sm">Site:</label>
-            </div>
+      <div className="w-full space-y-4">
+        <div className="w-full sm:w-auto grid grid-cols-2 rounded-md bg-muted p-1 text-muted-foreground">
+          <button 
+            onClick={() => setActiveTab('site')} 
+            className={cn("inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50", activeTab === 'site' ? "bg-background text-foreground shadow-sm" : "")}
+          >
+            Site Workers
+          </button>
+          <button 
+            onClick={() => setActiveTab('driver')} 
+            className={cn("inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50", activeTab === 'driver' ? "bg-background text-foreground shadow-sm" : "")}
+          >
+            Drivers
+          </button>
+        </div>
+
+        {activeTab === 'site' && (
+        <div className="space-y-4">
+          {/* Site Selector */}
+          <Card>
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                <div className="flex items-center gap-2 shrink-0">
+                  <MapPin className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
+                  <label className="font-medium text-sm">Site:</label>
+                </div>
             <select
               value={selectedSiteId}
               onChange={(e) => setSelectedSiteId(e.target.value)}
@@ -455,276 +476,524 @@ export default function AttendancePage() {
         </CardContent>
       </Card>
 
-      {selectedSiteId && (
-        <>
-          {/* Stats Cards */}
-          <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
-            <Card>
-              <CardContent className="p-3 sm:p-4">
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <div className="rounded-lg bg-green-500/20 p-1.5 sm:p-2 shrink-0">
-                    <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-500" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs sm:text-sm text-muted-foreground">Present</p>
-                    <p className="text-xl sm:text-2xl font-bold">{presentCount}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3 sm:p-4">
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <div className="rounded-lg bg-blue-500/20 p-1.5 sm:p-2 shrink-0">
-                    <Users className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs sm:text-sm text-muted-foreground">Full Day</p>
-                    <p className="text-xl sm:text-2xl font-bold">{fullDayCount}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3 sm:p-4">
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <div className="rounded-lg bg-yellow-500/20 p-1.5 sm:p-2 shrink-0">
-                    <Coffee className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-500" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs sm:text-sm text-muted-foreground">Half Day</p>
-                    <p className="text-xl sm:text-2xl font-bold">{halfDayCount}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3 sm:p-4">
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <div className="rounded-lg bg-orange-500/20 p-1.5 sm:p-2 shrink-0">
-                    <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs sm:text-sm text-muted-foreground">Total OT</p>
-                    <p className="text-xl sm:text-2xl font-bold">{totalOT}h</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          {selectedSiteId && (
+            <>
+              {/* Stats Cards */}
+              <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
+                <Card>
+                  <CardContent className="p-3 sm:p-4">
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      <div className="rounded-lg bg-green-500/20 p-1.5 sm:p-2 shrink-0">
+                        <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs sm:text-sm text-muted-foreground">Present</p>
+                        <p className="text-xl sm:text-2xl font-bold">{presentCount}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3 sm:p-4">
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      <div className="rounded-lg bg-blue-500/20 p-1.5 sm:p-2 shrink-0">
+                        <Users className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs sm:text-sm text-muted-foreground">Full Day</p>
+                        <p className="text-xl sm:text-2xl font-bold">{fullDayCount}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3 sm:p-4">
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      <div className="rounded-lg bg-yellow-500/20 p-1.5 sm:p-2 shrink-0">
+                        <Coffee className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs sm:text-sm text-muted-foreground">Half Day</p>
+                        <p className="text-xl sm:text-2xl font-bold">{halfDayCount}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3 sm:p-4">
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      <div className="rounded-lg bg-orange-500/20 p-1.5 sm:p-2 shrink-0">
+                        <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs sm:text-sm text-muted-foreground">Total OT</p>
+                        <p className="text-xl sm:text-2xl font-bold">{totalOT}h</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
 
-          {/* Search + Save */}
-          <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative flex-1 min-w-0">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search workers..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 text-sm"
-              />
-            </div>
+              {/* Search + Save */}
+              <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="relative flex-1 min-w-0">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search workers..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 text-sm"
+                  />
+                </div>
+                <Button
+                  onClick={() => saveMutation.mutate()}
+                  disabled={!isDirty || saveMutation.isPending}
+                  className="gap-2 w-full sm:w-auto"
+                  size="lg"
+                >
+                  {saveMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  <span className="hidden sm:inline">Save Attendance</span>
+                  <span className="sm:hidden">Save</span>
+                </Button>
+              </div>
+
+              {/* Attendance Table — Fast Marking UI */}
+              <Card>
+                <CardContent className="p-0">
+                  {isLoading ? (
+                    <div className="flex h-64 items-center justify-center">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    </div>
+                  ) : filteredRows.length === 0 ? (
+                    <div className="flex h-64 flex-col items-center justify-center gap-2 text-muted-foreground">
+                      <Users className="h-12 w-12" />
+                      <p>No workers assigned to this site</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-border text-left">
+                            <th className="p-1.5 sm:p-4 font-medium text-xs sm:text-sm text-muted-foreground">Name</th>
+                            <th className="p-1 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">
+                              <div className="flex items-center justify-center gap-0.5 sm:gap-1">
+                                <Sun className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> <span className="hidden sm:inline">Morning</span>
+                              </div>
+                            </th>
+                            <th className="p-1 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">
+                              <div className="flex items-center justify-center gap-0.5 sm:gap-1">
+                                <Moon className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> <span className="hidden sm:inline">Evening</span>
+                              </div>
+                            </th>
+                            <th className="p-1 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">OT</th>
+                            <th className="p-1 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredRows.map((row) => {
+                            const status =
+                              row.morning && row.evening
+                                ? 'Full Day'
+                                : row.morning || row.evening
+                                ? 'Half Day'
+                                : 'Absent';
+                            const statusColor =
+                              status === 'Full Day'
+                                ? 'text-green-500'
+                                : status === 'Half Day'
+                                ? 'text-yellow-500'
+                                : 'text-red-400';
+
+                            return (
+                              <tr
+                                key={row.workerId}
+                                className="border-b border-border/50 transition-colors hover:bg-muted/30"
+                              >
+                                {/* Name + Role */}
+                                <td className="p-1.5 sm:p-4">
+                                  <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
+                                    <div className="flex h-7 w-7 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-full bg-primary/20 font-medium text-primary text-xs sm:text-sm">
+                                      {row.workerName.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="font-medium text-xs sm:text-sm truncate">{row.workerName}</p>
+                                      <span
+                                        className={cn(
+                                          'inline-flex rounded-full px-1.5 sm:px-2 py-0.5 text-xs font-medium max-w-full',
+                                          roleBadgeColors[row.role || 'helper']
+                                        )}
+                                      >
+                                        {row.role}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* Morning Checkbox — large touch target */}
+                                <td className="p-1 sm:p-4 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleMorning(row.workerId)}
+                                    className={cn(
+                                      'inline-flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-lg border-2 text-lg sm:text-xl font-bold transition-all active:scale-95',
+                                      row.morning
+                                        ? 'border-green-500 bg-green-500/20 text-green-500'
+                                        : 'border-border text-muted-foreground hover:border-green-500/50'
+                                    )}
+                                    aria-label={`Morning ${row.morning ? 'present' : 'absent'}`}
+                                  >
+                                    {row.morning ? '✓' : '—'}
+                                  </button>
+                                </td>
+
+                                {/* Evening Checkbox — large touch target */}
+                                <td className="p-1 sm:p-4 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleEvening(row.workerId)}
+                                    className={cn(
+                                      'inline-flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-lg border-2 text-lg sm:text-xl font-bold transition-all active:scale-95',
+                                      row.evening
+                                        ? 'border-blue-500 bg-blue-500/20 text-blue-500'
+                                        : 'border-border text-muted-foreground hover:border-blue-500/50'
+                                    )}
+                                    aria-label={`Evening ${row.evening ? 'present' : 'absent'}`}
+                                  >
+                                    {row.evening ? '✓' : '—'}
+                                  </button>
+                                </td>
+
+                                {/* OT Hours — compact number input */}
+                                <td className="p-1 sm:p-4 text-center">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="12"
+                                    step="0.5"
+                                    value={row.otHours}
+                                    onChange={(e) =>
+                                      updateOT(row.workerId, parseFloat(e.target.value) || 0)
+                                    }
+                                    className="h-10 w-16 sm:h-12 sm:w-20 rounded-lg border border-border bg-background text-center text-xs sm:text-sm font-bold focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                                  />
+                                </td>
+
+                                {/* Status + Multi-site Indicator (only for allowed roles) */}
+                                <td className="p-1 sm:p-4 text-center">
+                                  <div className="space-y-0.5 sm:space-y-1">
+                                    <span className={cn('block font-medium text-xs sm:text-sm', statusColor)}>
+                                      {status}
+                                    </span>
+                                    {row.otHours > 0 && (
+                                      <span className="block text-xs text-orange-500">
+                                        +{row.otHours}h
+                                      </span>
+                                    )}
+
+                                    {/* Show total sites covered today only for owner/ceo/manager/supervisor */}
+                                    {(workerSiteCoverage.get(row.workerId)?.size || 0) > 1 &&
+                                      ['owner', 'ceo', 'manager', 'supervisor'].includes(row.role) && (
+                                      <span className="block rounded bg-purple-500/20 px-1 py-0.5 text-xs text-purple-400 font-medium">
+                                        {workerSiteCoverage.get(row.workerId)?.size || 0}📍
+                                      </span>
+                                    )}
+
+                                    {/* Warning for bass/helper if marked at multiple sites */}
+                                    {(workerSiteCoverage.get(row.workerId)?.size || 0) > 1 &&
+                                      ['bass', 'helper', 'draughtsman'].includes(row.role) && (
+                                      <span className="block rounded bg-red-500/20 px-1 py-0.5 text-xs text-red-400 font-medium">
+                                        ⚠️ Split
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Bottom Save Bar (mobile-friendly) */}
+              {isDirty && (
+                <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background p-4 shadow-lg md:hidden">
+                  <Button
+                    onClick={() => saveMutation.mutate()}
+                    disabled={saveMutation.isPending}
+                    className="w-full gap-2"
+                    size="lg"
+                  >
+                    {saveMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
+                    Save Attendance ({presentCount} present)
+                  </Button>
+                </div>
+              )}
+
+              {/* Info */}
+              <div className="text-xs sm:text-sm text-muted-foreground">
+                Showing {filteredRows.length} of {workerRows.length} workers
+              </div>
+            </>
+          )}
+        </div>
+        )}
+        
+        {activeTab === 'driver' && (
+        <div className="mt-4">
+          {/* Driver Attendance UI */}
+          <DriverAttendanceView 
+            dateStr={dateStr}
+            employees={employees}
+            attendance={allDayAttendance}
+            supervisorId={profile?.uid || ''}
+            isLoading={employeesPending || siteAttendancePending}
+          />
+        </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------
+// Driver Attendance View Component
+// ----------------------------------------------------------------------
+
+import { markDriverAttendance } from '@/services';
+
+function DriverAttendanceView({
+  dateStr,
+  employees,
+  attendance,
+  supervisorId,
+  isLoading
+}: {
+  dateStr: string;
+  employees: any[];
+  attendance: SimpleAttendance[];
+  supervisorId: string;
+  isLoading: boolean;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  
+  const drivers = useMemo(() => employees.filter(e => e.role === 'driver'), [employees]);
+  
+  const [driverRows, setDriverRows] = useState<any[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
+
+  useEffect(() => {
+    if (isLoading) return;
+    
+    const rows = drivers.map(driver => {
+      const existing = attendance.find(a => a.workerId === (driver.workerId || driver.uid));
+      const present = existing ? !!(existing.morningSite || existing.eveningSite) : false;
+      
+      return {
+        workerId: driver.workerId || driver.uid,
+        workerName: driver.displayName || driver.email,
+        present,
+        otHours: existing?.otHours || 0,
+        remarks: existing?.notes || '',
+        existing,
+      };
+    });
+    
+    setDriverRows(rows);
+    setIsDirty(false);
+  }, [drivers, attendance, isLoading, dateStr]);
+
+  const togglePresent = (workerId: string) => {
+    setDriverRows(prev => prev.map(r => 
+      r.workerId === workerId ? { ...r, present: !r.present } : r
+    ));
+    setIsDirty(true);
+  };
+
+  const updateOt = (workerId: string, hours: number) => {
+    setDriverRows(prev => prev.map(r => 
+      r.workerId === workerId ? { ...r, otHours: Math.max(0, hours) } : r
+    ));
+    setIsDirty(true);
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!supervisorId) throw new Error('Not authenticated');
+
+      let success = 0;
+      let failed = 0;
+
+      for (const row of driverRows) {
+        try {
+          await markDriverAttendance({
+            date: dateStr,
+            workerId: row.workerId,
+            workerName: row.workerName,
+            present: row.present,
+            otHours: row.otHours,
+            supervisorId,
+            remarks: row.remarks,
+          });
+          success++;
+        } catch (e) {
+          failed++;
+        }
+      }
+      return { success, failed };
+    },
+    onSuccess: (result) => {
+      toast({
+        title: 'Driver Attendance Saved',
+        description: `${result.success} drivers marked${result.failed > 0 ? `, ${result.failed} failed` : ''}`,
+      });
+      setIsDirty(false);
+      queryClient.invalidateQueries({ queryKey: ['simple-attendance'] });
+    },
+    onError: () => {
+      toast({
+        title: 'Error',
+        description: 'Failed to save driver attendance',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex h-32 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (drivers.length === 0) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+          <Users className="mb-4 h-12 w-12 opacity-20" />
+          <p>No drivers found in the system</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const presentCount = driverRows.filter(r => r.present).length;
+
+  return (
+    <div className="space-y-4">
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Card className="bg-card/50">
+          <CardContent className="p-3">
+            <p className="text-xs text-muted-foreground">Total Drivers</p>
+            <p className="text-xl font-bold">{drivers.length}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card/50">
+          <CardContent className="p-3">
+            <p className="text-xs text-muted-foreground">Present</p>
+            <p className="text-xl font-bold text-green-500">{presentCount}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card/50">
+          <CardContent className="p-3">
+            <p className="text-xs text-muted-foreground">Absent</p>
+            <p className="text-xl font-bold text-red-500">{drivers.length - presentCount}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/30">
+                <th className="p-3 text-left font-medium text-muted-foreground w-1/3">Driver</th>
+                <th className="p-3 text-center font-medium text-muted-foreground">Present</th>
+                <th className="p-3 text-center font-medium text-muted-foreground w-24">OT Hours</th>
+              </tr>
+            </thead>
+            <tbody>
+              {driverRows.map((row) => (
+                <tr key={row.workerId} className="border-b border-border/50 hover:bg-muted/30">
+                  <td className="p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cyan-500/20 text-xs font-medium text-cyan-400">
+                        {row.workerName.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{row.workerName}</p>
+                        <p className="text-xs text-muted-foreground">Driver</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="p-3 text-center">
+                    <button
+                      onClick={() => togglePresent(row.workerId)}
+                      className={cn(
+                        "mx-auto flex h-10 w-full sm:w-16 items-center justify-center rounded-md border text-xs sm:text-sm font-medium transition-colors",
+                        row.present
+                          ? "border-green-500 bg-green-500/10 text-green-600 dark:text-green-400"
+                          : "border-border bg-background text-muted-foreground hover:bg-muted"
+                      )}
+                    >
+                      {row.present ? 'Yes' : 'No'}
+                    </button>
+                  </td>
+                  <td className="p-3 text-center">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={row.otHours || ''}
+                      onChange={(e) => updateOt(row.workerId, parseFloat(e.target.value) || 0)}
+                      className="w-full sm:w-16 mx-auto h-10 text-center"
+                      placeholder="0"
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        
+        {/* Floating Save Button */}
+        <div className="sticky bottom-0 border-t border-border bg-background/80 p-3 sm:p-4 backdrop-blur-md">
+          <div className="flex items-center justify-between">
+            <p className="text-xs sm:text-sm text-muted-foreground">
+              {isDirty ? (
+                <span className="text-amber-500 font-medium">Unsaved changes</span>
+              ) : (
+                'All changes saved'
+              )}
+            </p>
             <Button
+              className="gap-2 w-full sm:w-auto"
               onClick={() => saveMutation.mutate()}
               disabled={!isDirty || saveMutation.isPending}
-              className="gap-2 w-full sm:w-auto"
-              size="lg"
             >
               {saveMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Save className="h-4 w-4" />
               )}
-              <span className="hidden sm:inline">Save Attendance</span>
-              <span className="sm:hidden">Save</span>
+              Save Attendance ({presentCount} present)
             </Button>
           </div>
-
-          {/* Attendance Table — Fast Marking UI */}
-          <Card>
-            <CardContent className="p-0">
-              {isLoading ? (
-                <div className="flex h-64 items-center justify-center">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                </div>
-              ) : filteredRows.length === 0 ? (
-                <div className="flex h-64 flex-col items-center justify-center gap-2 text-muted-foreground">
-                  <Users className="h-12 w-12" />
-                  <p>No workers assigned to this site</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border text-left">
-                        <th className="p-1.5 sm:p-4 font-medium text-xs sm:text-sm text-muted-foreground">Name</th>
-                        <th className="p-1 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">
-                          <div className="flex items-center justify-center gap-0.5 sm:gap-1">
-                            <Sun className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> <span className="hidden sm:inline">Morning</span>
-                          </div>
-                        </th>
-                        <th className="p-1 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">
-                          <div className="flex items-center justify-center gap-0.5 sm:gap-1">
-                            <Moon className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> <span className="hidden sm:inline">Evening</span>
-                          </div>
-                        </th>
-                        <th className="p-1 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">OT</th>
-                        <th className="p-1 sm:p-4 text-center font-medium text-xs sm:text-sm text-muted-foreground">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredRows.map((row) => {
-                        const status =
-                          row.morning && row.evening
-                            ? 'Full Day'
-                            : row.morning || row.evening
-                            ? 'Half Day'
-                            : 'Absent';
-                        const statusColor =
-                          status === 'Full Day'
-                            ? 'text-green-500'
-                            : status === 'Half Day'
-                            ? 'text-yellow-500'
-                            : 'text-red-400';
-
-                        return (
-                          <tr
-                            key={row.workerId}
-                            className="border-b border-border/50 transition-colors hover:bg-muted/30"
-                          >
-                            {/* Name + Role */}
-                            <td className="p-1.5 sm:p-4">
-                              <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
-                                <div className="flex h-7 w-7 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-full bg-primary/20 font-medium text-primary text-xs sm:text-sm">
-                                  {row.workerName.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="font-medium text-xs sm:text-sm truncate">{row.workerName}</p>
-                                  <span
-                                    className={cn(
-                                      'inline-flex rounded-full px-1.5 sm:px-2 py-0.5 text-xs font-medium max-w-full',
-                                      roleBadgeColors[row.role]
-                                    )}
-                                  >
-                                    {row.role}
-                                  </span>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* Morning Checkbox — large touch target */}
-                            <td className="p-1 sm:p-4 text-center">
-                              <button
-                                type="button"
-                                onClick={() => toggleMorning(row.workerId)}
-                                className={cn(
-                                  'inline-flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-lg border-2 text-lg sm:text-xl font-bold transition-all active:scale-95',
-                                  row.morning
-                                    ? 'border-green-500 bg-green-500/20 text-green-500'
-                                    : 'border-border text-muted-foreground hover:border-green-500/50'
-                                )}
-                                aria-label={`Morning ${row.morning ? 'present' : 'absent'}`}
-                              >
-                                {row.morning ? '✓' : '—'}
-                              </button>
-                            </td>
-
-                            {/* Evening Checkbox — large touch target */}
-                            <td className="p-1 sm:p-4 text-center">
-                              <button
-                                type="button"
-                                onClick={() => toggleEvening(row.workerId)}
-                                className={cn(
-                                  'inline-flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-lg border-2 text-lg sm:text-xl font-bold transition-all active:scale-95',
-                                  row.evening
-                                    ? 'border-blue-500 bg-blue-500/20 text-blue-500'
-                                    : 'border-border text-muted-foreground hover:border-blue-500/50'
-                                )}
-                                aria-label={`Evening ${row.evening ? 'present' : 'absent'}`}
-                              >
-                                {row.evening ? '✓' : '—'}
-                              </button>
-                            </td>
-
-                            {/* OT Hours — compact number input */}
-                            <td className="p-1 sm:p-4 text-center">
-                              <input
-                                type="number"
-                                min="0"
-                                max="12"
-                                step="0.5"
-                                value={row.otHours}
-                                onChange={(e) =>
-                                  updateOT(row.workerId, parseFloat(e.target.value) || 0)
-                                }
-                                className="h-10 w-16 sm:h-12 sm:w-20 rounded-lg border border-border bg-background text-center text-xs sm:text-sm font-bold focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                              />
-                            </td>
-
-                            {/* Status + Multi-site Indicator (only for allowed roles) */}
-                            <td className="p-1 sm:p-4 text-center">
-                              <div className="space-y-0.5 sm:space-y-1">
-                                <span className={cn('block font-medium text-xs sm:text-sm', statusColor)}>
-                                  {status}
-                                </span>
-                                {row.otHours > 0 && (
-                                  <span className="block text-xs text-orange-500">
-                                    +{row.otHours}h
-                                  </span>
-                                )}
-
-                                {/* Show total sites covered today only for owner/ceo/manager/supervisor */}
-                                {(workerSiteCoverage.get(row.workerId)?.size || 0) > 1 &&
-                                  ['owner', 'ceo', 'manager', 'supervisor'].includes(row.role) && (
-                                  <span className="block rounded bg-purple-500/20 px-1 py-0.5 text-xs text-purple-400 font-medium">
-                                    {workerSiteCoverage.get(row.workerId)?.size || 0}📍
-                                  </span>
-                                )}
-
-                                {/* Warning for bass/helper if marked at multiple sites */}
-                                {(workerSiteCoverage.get(row.workerId)?.size || 0) > 1 &&
-                                  ['bass', 'helper', 'draughtsman'].includes(row.role) && (
-                                  <span className="block rounded bg-red-500/20 px-1 py-0.5 text-xs text-red-400 font-medium">
-                                    ⚠️ Split
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Bottom Save Bar (mobile-friendly) */}
-          {isDirty && (
-            <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background p-4 shadow-lg md:hidden">
-              <Button
-                onClick={() => saveMutation.mutate()}
-                disabled={saveMutation.isPending}
-                className="w-full gap-2"
-                size="lg"
-              >
-                {saveMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
-                Save Attendance ({presentCount} present)
-              </Button>
-            </div>
-          )}
-
-          {/* Info */}
-          <div className="text-xs sm:text-sm text-muted-foreground">
-            Showing {filteredRows.length} of {workerRows.length} workers
-          </div>
-        </>
-      )}
+        </div>
+      </Card>
     </div>
   );
 }

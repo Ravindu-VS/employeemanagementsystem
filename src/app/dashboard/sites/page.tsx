@@ -37,7 +37,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { formatDate } from '@/lib/date-utils';
 import { cn } from '@/lib/utils';
 import { ROUTES } from '@/constants';
-import type { SiteStatus } from '@/types';
+import type { SiteStatus, UserRole } from '@/types';
 
 // Status badge configuration
 const statusConfig: Record<SiteStatus, { 
@@ -141,7 +141,7 @@ export default function SitesPage() {
         createAuditLog({
           userId: profile.uid,
           userName: profile.displayName || profile.email,
-          userRole: profile.role,
+          userRole: profile.role as UserRole,
           action: 'delete',
           resource: 'sites',
           resourceId: siteId,

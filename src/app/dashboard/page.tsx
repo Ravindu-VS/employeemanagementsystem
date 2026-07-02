@@ -223,10 +223,22 @@ export default function DashboardPage() {
 
   const totalEmployees = employees.length;
   const activeEmployees = employees.filter((e) => e.isActive !== false).length;
+  
+  // Site workers vs Drivers
+  const driverEmployees = employees.filter(e => e.role === 'driver');
+  const activeDrivers = driverEmployees.filter(e => e.isActive !== false).length;
+  
   const totalSites = sites.length;
   const activeSites = sites.filter((s) => s.status === "active").length;
+  
+  // Attendance logic
   const todayPresent = todayAttendance.filter((a) => a.morningSite || a.eveningSite).length;
   const todayAbsent = activeEmployees - todayPresent;
+  
+  // Driver specific stats
+  const driverAttendance = todayAttendance.filter(a => a.morningSite === 'transportation_duties' || a.eveningSite === 'transportation_duties');
+  const driversPresentCount = driverAttendance.filter(a => a.morningSite || a.eveningSite).length;
+
   const pendingAdvanceCount = pendingAdvances.length;
   const pendingLoanCount = pendingLoans.length;
 
@@ -280,7 +292,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
         <StatCard
           title="Total Employees"
           value={totalEmployees}
@@ -307,6 +319,13 @@ export default function DashboardPage() {
           description={`${pendingAdvanceCount} advances, ${pendingLoanCount} loans`}
           icon={Wallet}
           iconClassName="bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400"
+        />
+        <StatCard
+          title="Drivers Present"
+          value={`${driversPresentCount} / ${activeDrivers}`}
+          description={`${activeDrivers - driversPresentCount} absent`}
+          icon={Users}
+          iconClassName="bg-cyan-100 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-400"
         />
       </div>
 
