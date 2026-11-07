@@ -271,7 +271,7 @@ export default function DashboardPage() {
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
-            Welcome back! Here's an overview of your workforce.
+            Welcome back! Here&apos;s an overview of your workforce.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">

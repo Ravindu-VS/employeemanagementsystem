@@ -7,6 +7,7 @@
  * Application and system settings with Firestore persistence.
  */
 
+import Image from 'next/image';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -328,7 +329,7 @@ export default function SettingsPage() {
                 <div className="flex items-center gap-3 sm:p-4">
                   <div className="relative">
                     {photoPreview ? (
-                      <img src={photoPreview} alt="Profile" className="h-20 w-20 rounded-full object-cover" />
+                      <Image src={photoPreview} alt="Profile" width={80} height={80} unoptimized className="h-20 w-20 rounded-full object-cover" />
                     ) : (
                       <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/20 text-3xl font-bold text-primary">
                         {profileData.displayName.charAt(0).toUpperCase()}
