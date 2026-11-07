@@ -19,7 +19,7 @@ import {
   onAuthStateChanged,
   User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp, collection, getDocs, query, limit, increment } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, serverTimestamp, increment, writeBatch } from 'firebase/firestore';
 import { auth, db } from './config';
 import { COLLECTIONS } from '@/constants';
 import type { User, UserProfile } from '@/types';
@@ -78,16 +78,8 @@ async function createUserProfile(firebaseUser: FirebaseUser): Promise<{ profile:
   let isNewUser = false;
   
   if (!profile) {
-    // Check if this is the first user (will be owner)
-    let isFirstUser = false;
-    try {
-      const usersQuery = query(collection(db, COLLECTIONS.USERS), limit(1));
-      const snapshot = await getDocs(usersQuery);
-      isFirstUser = snapshot.empty;
-    } catch (e) {
-      console.warn('Could not check if first user, assuming not first:', e);
-      isFirstUser = false;
-    }
+    // Only the very first account (before system/bootstrap exists) becomes Owner.
+    const isFirstUser = !(await isSystemBootstrapped());
     
     // Create new user profile
     // First user = owner with full access, everyone else = pending approval
@@ -122,7 +114,7 @@ async function createUserProfile(firebaseUser: FirebaseUser): Promise<{ profile:
     };
     
     try {
-      await setDoc(doc(db, COLLECTIONS.USERS, firebaseUser.uid), newProfile);
+      await createOwnUserProfile(firebaseUser.uid, newProfile, isFirstUser);
       profile = newProfile as unknown as UserProfile;
       isNewUser = true;
     } catch (e: any) {
@@ -259,6 +251,52 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
       console.error('Firestore appears to be offline. This usually means security rules are blocking access.');
     }
     return null;
+  }
+}
+
+// =====================================================
+// FIRST-OWNER BOOTSTRAP
+// =====================================================
+// Firestore rules allow a self-created Owner profile only while
+// system/bootstrap does not exist, and only together with creating it.
+// Everyone else signs up as role=null / status=pending and must be approved.
+
+const BOOTSTRAP_REF = () => doc(db, COLLECTIONS.SYSTEM, 'bootstrap');
+
+export async function isSystemBootstrapped(): Promise<boolean> {
+  try {
+    return (await getDoc(BOOTSTRAP_REF())).exists();
+  } catch {
+    return true; // fail closed: never offer Owner if we cannot check
+  }
+}
+
+/** Create the signed-in user's own profile (pending, or first Owner). */
+export async function createOwnUserProfile(uid: string, profile: Record<string, unknown>, asFirstOwner: boolean): Promise<void> {
+  const batch = writeBatch(db);
+  const data = asFirstOwner
+    ? { ...profile, role: 'owner', status: 'active', approved: true, isActive: true }
+    : { ...profile, role: null, status: 'pending', approved: false, isActive: false };
+  batch.set(doc(db, COLLECTIONS.USERS, uid), data);
+  if (asFirstOwner) batch.set(BOOTSTRAP_REF(), { ownerUid: uid, createdAt: serverTimestamp() });
+  await batch.commit();
+}
+
+/**
+ * Existing deployments: lock the bootstrap as soon as an Owner signs in, so
+ * nobody can claim Owner later. Safe to call repeatedly.
+ */
+export async function ensureBootstrapLocked(profile: { uid: string; role: string | null }): Promise<void> {
+  if (profile.role !== 'owner') return;
+  try {
+    const ref = BOOTSTRAP_REF();
+    if (!(await getDoc(ref)).exists()) {
+      const batch = writeBatch(db);
+      batch.set(ref, { ownerUid: profile.uid, createdAt: serverTimestamp() });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('Could not lock system bootstrap:', e);
   }
 }
 

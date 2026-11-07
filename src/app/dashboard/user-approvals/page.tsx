@@ -24,6 +24,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ACCESS_MATRIX } from '@/domain/roles';
 import { useRequireRole, useAuth } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
@@ -32,7 +33,7 @@ import { ROLE_OPTIONS } from '@/constants';
 import type { UserProfile, UserRole } from '@/types';
 
 export default function UserApprovalsPage() {
-  const { isAuthorized } = useRequireRole(['owner', 'ceo']);
+  const { isAuthorized } = useRequireRole(ACCESS_MATRIX.approvals);
   const { profile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();

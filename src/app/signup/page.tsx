@@ -7,9 +7,9 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc, collection, getDocs, query, limit } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase/client';
-import { signInWithGoogle } from '@/lib/firebase/auth';
+
+import { auth } from '@/lib/firebase/client';
+import { signInWithGoogle, isSystemBootstrapped, createOwnUserProfile } from '@/lib/firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -54,9 +54,7 @@ export default function SignupPage() {
   useEffect(() => {
     const checkFirstUser = async () => {
       try {
-        const usersQuery = query(collection(db, COLLECTIONS.USERS), limit(1));
-        const snapshot = await getDocs(usersQuery);
-        setIsFirstUser(snapshot.empty);
+        setIsFirstUser(!(await isSystemBootstrapped()));
       } catch (error) {
         console.error('Error checking users:', error);
         setIsFirstUser(false);
@@ -135,8 +133,8 @@ export default function SignupPage() {
       // First user is always owner with full access
       const isOwner = isFirstUser === true;
 
-      // Create user document in Firestore
-      await setDoc(doc(db, COLLECTIONS.USERS, user.uid), {
+      // Create user document in Firestore (pending — or first Owner)
+      await createOwnUserProfile(user.uid, {
         uid: user.uid,
         email: data.email,
         displayName: data.name,
@@ -162,7 +160,7 @@ export default function SignupPage() {
         },
         createdAt: new Date(),
         updatedAt: new Date(),
-      });
+      }, isOwner);
 
       toast({
         title: 'Account Created!',

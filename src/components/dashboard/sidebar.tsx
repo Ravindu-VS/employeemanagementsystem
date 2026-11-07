@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { signOut } from "@/lib/firebase/auth";
 import { ROUTES, USER_ROLES } from "@/constants";
+import { canAccess, type AppArea } from "@/domain/roles";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/types";
 
@@ -43,67 +44,67 @@ const navItems = [
     title: "Dashboard",
     href: ROUTES.DASHBOARD,
     icon: LayoutDashboard,
-    roles: ['owner', 'ceo', 'manager', 'supervisor', 'draughtsman', 'bass', 'helper', 'driver'],
+    area: 'dashboard' as AppArea,
   },
   {
     title: "User Approvals",
     href: ROUTES.USER_APPROVALS,
     icon: UserCheck,
-    roles: ['owner', 'ceo'],
+    area: 'approvals' as AppArea,
   },
   {
     title: "Employees",
     href: ROUTES.EMPLOYEES.LIST,
     icon: Users,
-    roles: ['owner', 'ceo', 'manager', 'supervisor'],
+    area: 'employees' as AppArea,
   },
   {
     title: "Work Sites",
     href: ROUTES.SITES.LIST,
     icon: MapPin,
-    roles: ['owner', 'ceo', 'manager'],
+    area: 'sites' as AppArea,
   },
   {
     title: "Attendance",
     href: ROUTES.ATTENDANCE.LIST,
     icon: Clock,
-    roles: ['owner', 'ceo', 'manager', 'supervisor', 'driver'],
+    area: 'attendance' as AppArea,
   },
   {
     title: "Payroll",
     href: ROUTES.PAYROLL.LIST,
     icon: DollarSign,
-    roles: ['owner', 'ceo', 'manager'],
+    area: 'payroll' as AppArea,
   },
   {
     title: "Advances",
     href: ROUTES.ADVANCES.LIST,
     icon: Wallet,
-    roles: ['owner', 'ceo', 'manager'],
+    area: 'advances' as AppArea,
   },
   {
     title: "Loans",
     href: ROUTES.LOANS.LIST,
     icon: CreditCard,
-    roles: ['owner', 'ceo', 'manager'],
+    area: 'loans' as AppArea,
   },
   {
     title: "Reports",
     href: ROUTES.REPORTS.LIST,
     icon: BarChart3,
-    roles: ['owner', 'ceo', 'manager'],
+    area: 'reports' as AppArea,
   },
   {
     title: "Audit Logs",
     href: ROUTES.AUDIT_LOGS,
     icon: FileText,
-    roles: ['owner', 'ceo'],
+    area: 'audit_logs' as AppArea,
   },
   {
     title: "Settings",
     href: ROUTES.SETTINGS.LIST,
     icon: Settings,
-    roles: ['owner', 'ceo', 'manager'],
+    area: 'settings' as AppArea,
   },
 ];
 
@@ -112,9 +113,7 @@ export function Sidebar({ collapsed, onCollapsedChange, userRole }: SidebarProps
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
 
   // Filter nav items based on user role
-  const filteredNavItems = navItems.filter((item) =>
-    item.roles.includes(userRole)
-  );
+  const filteredNavItems = navItems.filter((item) => canAccess(userRole, item.area));
 
   // Handle logout
   const handleLogout = async () => {

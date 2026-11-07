@@ -11,13 +11,14 @@ import {
   getPaginatedDocuments,
   createDocumentWithId,
   updateDocument,
-  deleteDocument,
   query,
   where,
   orderBy,
 } from '@/lib/firebase/firestore';
 import { uploadProfilePhoto, deleteFileByUrl } from '@/lib/firebase/storage';
 import { COLLECTIONS } from '@/constants';
+import { toISODateString } from '@/lib/date-utils';
+import { auditAction } from './audit-service';
 import type { 
   UserProfile, 
   UserRole, 
@@ -132,7 +133,48 @@ export async function updateEmployee(
   employeeId: string,
   data: Partial<UserProfile>
 ): Promise<void> {
-  await updateDocument<UserProfile>(COLLECTIONS.USERS, employeeId, data);
+  const before = await getEmployee(employeeId);
+  const updates: Partial<UserProfile> & Record<string, unknown> = { ...data };
+  delete (updates as Record<string, unknown>).otRate; // OT rate is always daily ÷ 8
+
+  if (before) {
+    // Salary history: keep the rate that applied before the change so past
+    // weeks are never re-priced (payroll uses the rate effective per date).
+    if (data.dailyRate !== undefined && Number(data.dailyRate) !== Number(before.dailyRate)) {
+      const today = toISODateString(new Date());
+      const history = [...(before.salaryHistory || [])];
+      if (history.length === 0 && Number(before.dailyRate) > 0) {
+        history.push({ dailyRate: Number(before.dailyRate), effectiveFrom: '1970-01-01', reason: 'Rate before salary history was recorded' });
+      }
+      const actor = (await import('@/store/auth-store')).useAuthStore.getState().profile;
+      // Same-day corrections replace today's entry instead of stacking.
+      const withoutToday = history.filter((h) => h.effectiveFrom !== today);
+      withoutToday.push({ dailyRate: Number(data.dailyRate), effectiveFrom: today, changedBy: actor?.uid, changedAt: new Date().toISOString() });
+      updates.salaryHistory = withoutToday;
+      updates.hourlyRate = Number(data.dailyRate) / 8;
+      updates.weeklyRate = Number(data.dailyRate) * 6;
+    }
+    // Changing the worker ID must not orphan existing attendance.
+    if (data.workerId && before.workerId && data.workerId !== before.workerId) {
+      updates.formerWorkerIds = Array.from(new Set([...(before.formerWorkerIds || []), before.workerId]));
+    }
+  }
+
+  await updateDocument<UserProfile>(COLLECTIONS.USERS, employeeId, updates);
+
+  if (before) {
+    const changed: Record<string, unknown> = {};
+    const previous: Record<string, unknown> = {};
+    for (const key of ['role', 'dailyRate', 'siteVisitRate', 'isActive', 'workerId', 'transportType', 'transportRate', 'transportRateType', 'distance'] as const) {
+      if (key in data && (data as Record<string, unknown>)[key] !== (before as unknown as Record<string, unknown>)[key]) {
+        changed[key] = (data as Record<string, unknown>)[key];
+        previous[key] = (before as unknown as Record<string, unknown>)[key];
+      }
+    }
+    if (Object.keys(changed).length > 0) {
+      await auditAction('update', 'employees', employeeId, { oldValue: previous, newValue: changed });
+    }
+  }
 }
 
 /**
@@ -142,6 +184,7 @@ export async function deactivateEmployee(employeeId: string): Promise<void> {
   await updateDocument<UserProfile>(COLLECTIONS.USERS, employeeId, {
     isActive: false,
   });
+  await auditAction('update', 'employees', employeeId, { newValue: { isActive: false } });
 }
 
 /**
@@ -157,7 +200,14 @@ export async function activateEmployee(employeeId: string): Promise<void> {
  * Permanently delete an employee record
  */
 export async function deleteEmployee(employeeId: string): Promise<void> {
-  await deleteDocument(COLLECTIONS.USERS, employeeId);
+  // Employees are never hard-deleted: attendance, payroll and audit history
+  // reference them. "Delete" deactivates and marks the record as removed.
+  await updateDocument<UserProfile>(COLLECTIONS.USERS, employeeId, {
+    isActive: false,
+    status: 'rejected',
+    removedAt: new Date(),
+  } as Partial<UserProfile>);
+  await auditAction('delete', 'employees', employeeId, { newValue: { isActive: false, removed: true } });
 }
 
 /**
@@ -210,12 +260,7 @@ export async function updateEmployeeRates(
   employeeId: string,
   dailyRate: number
 ): Promise<void> {
-  await updateDocument<UserProfile>(COLLECTIONS.USERS, employeeId, {
-    dailyRate,
-    // Keep legacy fields calculated
-    hourlyRate: dailyRate / 8,
-    weeklyRate: dailyRate * 6,
-  });
+  await updateEmployee(employeeId, { dailyRate });
 }
 
 /**

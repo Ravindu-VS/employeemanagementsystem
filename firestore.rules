@@ -1,9 +1,163 @@
 rules_version = '2';
+
+// =====================================================================
+// KK & SONS Architectural Services — Workforce Management System
+// Firestore Security Rules (server-side enforcement of the access matrix
+// in src/domain/roles/index.ts — the UI hiding a button is never enough)
+//
+// Deployment order for an EXISTING project (see docs/README.md → Security):
+//   1. deploy the app, 2. the Owner signs in once (creates system/bootstrap),
+//   3. `firebase deploy --only firestore:rules`.
+// =====================================================================
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow authenticated users to read and write all documents
+
+    // ---------- helpers ----------
+    function signedIn() { return request.auth != null; }
+    function me() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function hasProfile() { return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function active() { return hasProfile() && me().isActive == true && me().role != null; }
+    function roleIn(roles) { return active() && me().role in roles; }
+
+    function isAdmin() { return roleIn(['owner', 'ceo']); }
+    function isPayrollAdmin() { return roleIn(['owner', 'ceo', 'manager']); }
+    function isAttendanceMarker() { return roleIn(['owner', 'ceo', 'manager', 'supervisor']); }
+
+    function changes(fields) { return request.resource.data.diff(resource.data).affectedKeys().hasAny(fields); }
+    function onlyChanges(fields) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields); }
+
+    // ---------- bootstrap (first Owner) ----------
+    // The very first account may create itself as Owner only while
+    // system/bootstrap does not exist, and must create it in the same batch.
+    match /system/bootstrap {
+      allow read: if true; // only says "an Owner exists"; needed by the signup page
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ---------- users / employees ----------
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAttendanceMarker());
+
+      // Public signup: a user may only create THEIR OWN document, pending,
+      // without any role or salary — or the first Owner during bootstrap.
+      allow create: if signedIn() && request.auth.uid == uid && (
+        (request.resource.data.role == null
+          && request.resource.data.isActive == false
+          && request.resource.data.approved == false
+          && request.resource.data.status == 'pending')
+        || (request.resource.data.role == 'owner'
+          && !exists(/databases/$(database)/documents/system/bootstrap)
+          && existsAfter(/databases/$(database)/documents/system/bootstrap))
+      )
+      // Admins create employee records for other people (never Owner/CEO
+      // unless the creator is the Owner).
+      || (isPayrollAdmin() && request.auth.uid != uid
+          && (!(request.resource.data.role in ['owner', 'ceo']) || me().role == 'owner')
+          && (request.resource.data.role != 'manager' || isAdmin()));
+
+      allow update: if
+        // self-service: profile fields only — never role/status/salary
+        (signedIn() && request.auth.uid == uid
+          && !changes(['role', 'isActive', 'approved', 'status', 'dailyRate', 'salaryHistory',
+                       'siteVisitRate', 'otRate', 'hourlyRate', 'weeklyRate', 'workerId', 'formerWorkerIds',
+                       'transportType', 'transportRate', 'transportRateType', 'distance', 'assignedSites', 'payType']))
+        // Owner/CEO: everything; only the Owner may grant/alter Owner or CEO
+        || (isAdmin()
+          && (me().role == 'owner' || !(resource.data.role in ['owner', 'ceo']))
+          && (me().role == 'owner' || !(request.resource.data.role in ['owner', 'ceo'])))
+        // Manager: employee data of non-admin staff, but not roles/approval
+        || (isPayrollAdmin() && me().role == 'manager'
+          && !(resource.data.role in ['owner', 'ceo', 'manager'])
+          && !changes(['role', 'approved', 'status']));
+
+      allow delete: if roleIn(['owner']);
+    }
+
+    // ---------- sites ----------
+    match /sites/{siteId} {
+      allow read: if active();
+      allow create, update: if isPayrollAdmin();
+      allow delete: if roleIn(['owner']); // the app archives instead of deleting
+    }
+
+    // ---------- attendance (supervisor-marked) ----------
+    match /simpleAttendance/{docId} {
+      allow read: if isAttendanceMarker()
+        || (active() && (resource.data.workerId == request.auth.uid || resource.data.workerId == me().workerId));
+      allow create, update: if isAttendanceMarker()
+        && request.resource.data.date is string
+        && request.resource.data.workerId is string
+        && request.resource.data.updatedBy == request.auth.uid;
+      // legacy docs are only ever flagged superseded, never deleted
+      allow delete: if false;
+    }
+
+    // legacy segment-based attendance (read-only history)
+    match /attendance/{docId} {
+      allow read: if isAttendanceMarker();
+      allow write: if false;
+    }
+
+    // ---------- payroll ----------
+    match /payroll/{payrollId} {
+      allow read: if isPayrollAdmin()
+        || (active() && resource.data.employeeId == request.auth.uid);
+      allow create: if isPayrollAdmin();
+      // amounts are immutable once stored; only status/payment metadata may change
+      allow update: if isPayrollAdmin()
+        && onlyChanges(['status', 'paidAt', 'paidBy', 'paymentMethod', 'approvedAt', 'approvedBy', 'payslipUrl', 'notes', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // ---------- advances ----------
+    match /advances/{advanceId} {
+      allow read: if isPayrollAdmin()
+        || (active() && resource.data.employeeId == request.auth.uid);
+      allow create: if isPayrollAdmin()
+        || (active() && request.resource.data.employeeId == request.auth.uid && request.resource.data.status == 'pending');
+      allow update: if isPayrollAdmin()
+        // a deducted advance can never be "un-deducted"
+        && !(resource.data.get('isDeducted', false) == true && request.resource.data.get('isDeducted', false) == false);
+      allow delete: if isPayrollAdmin()
+        && resource.data.get('isDeducted', false) != true
+        && resource.data.get('deducted', false) != true;
+    }
+
+    // ---------- loans ----------
+    match /loans/{loanId} {
+      allow read: if isPayrollAdmin()
+        || (active() && resource.data.employeeId == request.auth.uid);
+      allow create: if isPayrollAdmin()
+        || (active() && request.resource.data.employeeId == request.auth.uid && request.resource.data.status == 'pending');
+      allow update: if isPayrollAdmin();
+      allow delete: if isAdmin() && resource.data.status in ['pending', 'rejected', 'cancelled'];
+    }
+
+    // ---------- settings ----------
+    match /settings/{docId} {
+      allow read: if active();
+      allow write: if isAdmin();
+    }
+
+    // ---------- audit logs: append-only ----------
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if active() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ---------- notifications ----------
+    match /notifications/{id} {
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if active();
+      allow update: if signedIn() && resource.data.userId == request.auth.uid && onlyChanges(['read', 'readAt']);
+      allow delete: if isAdmin();
+    }
+
+    // everything else: denied
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }

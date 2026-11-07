@@ -32,6 +32,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmployeeCard } from '@/components/employees/EmployeeCard';
 import { getAllEmployees, deactivateEmployee, reactivateEmployee, deleteEmployee } from '@/services';
 import { createAuditLog } from '@/services/audit-service';
+import { ACCESS_MATRIX } from '@/domain/roles';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { formatDate } from '@/lib/date-utils';
@@ -52,7 +53,7 @@ const roleBadgeColors: Record<UserRole, string> = {
 };
 
 export default function EmployeesPage() {
-  const { isAuthorized, profile } = useRequireRole(['owner', 'ceo', 'manager', 'supervisor']);
+  const { isAuthorized, profile } = useRequireRole(ACCESS_MATRIX.employees);
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
@@ -137,7 +138,7 @@ export default function EmployeesPage() {
   };
 
   const handleDelete = async (employee: UserProfile) => {
-    if (!confirm(`Are you sure you want to permanently delete ${employee.displayName || 'this employee'}? This action cannot be undone.`)) {
+    if (!confirm(`Are you sure you want to remove ${employee.displayName || 'this employee'}? They are deactivated and hidden from new attendance; past attendance and payroll are kept.`)) {
       return;
     }
     setDeletingId(employee.uid);
@@ -155,8 +156,8 @@ export default function EmployeesPage() {
         });
       }
       toast({
-        title: 'Employee Deleted',
-        description: `${employee.displayName || 'Employee'} has been permanently deleted.`,
+        title: 'Employee removed',
+        description: `${employee.displayName || 'Employee'} has been removed (history kept).`,
       });
       refetch();
     } catch (error: any) {

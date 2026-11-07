@@ -32,6 +32,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { getAllSites, updateSiteStatus, deleteSite } from '@/services';
 import { createAuditLog } from '@/services/audit-service';
+import { ACCESS_MATRIX } from '@/domain/roles';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { formatDate } from '@/lib/date-utils';
@@ -83,7 +84,7 @@ const statusConfig: Record<SiteStatus, {
 };
 
 export default function SitesPage() {
-  const { isAuthorized, profile } = useRequireRole(['owner', 'ceo', 'manager']);
+  const { isAuthorized, profile } = useRequireRole(ACCESS_MATRIX.sites);
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<SiteStatus | 'all'>('all');
@@ -147,7 +148,7 @@ export default function SitesPage() {
   };
 
   const handleDelete = async (siteId: string, siteName: string) => {
-    if (!confirm(`Are you sure you want to delete "${siteName}"? This cannot be undone.`)) return;
+    if (!confirm(`Archive "${siteName}"? It will no longer be available for new attendance. Historical attendance and payroll are kept.`)) return;
     try {
       await deleteSite(siteId);
       if (profile) {
@@ -155,21 +156,21 @@ export default function SitesPage() {
           userId: profile.uid,
           userName: profile.displayName || profile.email,
           userRole: profile.role!,
-          action: 'delete',
+          action: 'update',
           resource: 'sites',
           resourceId: siteId,
-          newValue: { name: siteName },
+          newValue: { name: siteName, status: 'archived' },
         });
       }
       toast({
-        title: 'Site Deleted',
-        description: `${siteName} has been removed.`,
+        title: 'Site archived',
+        description: `${siteName} is archived. Its history is preserved.`,
       });
       refetch();
     } catch (error: any) {
       toast({
         title: 'Error',
-        description: error.message || 'Failed to delete site',
+        description: error.message || 'Failed to archive site',
         variant: 'destructive',
       });
     }
@@ -406,11 +407,12 @@ export default function SitesPage() {
                       <Button 
                         variant="ghost" 
                         size="sm" 
-                        className="h-8 gap-1 text-red-400 hover:text-red-300"
+                        className="h-8 gap-1 text-red-600 hover:text-red-500 dark:text-red-400"
                         onClick={() => handleDelete(site.id, site.name)}
+                        disabled={site.status === 'archived'}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                        Delete
+                        Archive
                       </Button>
                     </div>
                   </div>

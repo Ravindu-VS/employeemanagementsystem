@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { getSite, updateSite } from '@/services';
 import { createAuditLog } from '@/services/audit-service';
+import { ACCESS_MATRIX } from '@/domain/roles';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { ROUTES } from '@/constants';
@@ -49,7 +50,7 @@ export default function EditSitePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { isAuthorized, user, profile } = useRequireRole(['owner', 'ceo', 'manager']);
+  const { isAuthorized, user, profile } = useRequireRole(ACCESS_MATRIX.sites);
   const [enableGeofence, setEnableGeofence] = useState(false);
 
   // Fetch site details

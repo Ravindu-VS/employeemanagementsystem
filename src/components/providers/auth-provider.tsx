@@ -6,6 +6,7 @@ import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 import { getUserProfile } from "@/lib/firebase/auth";
 import { useAuthStore } from "@/store/auth-store";
+import { ensureBootstrapLocked } from "@/lib/firebase/auth";
 import type { UserProfile, AuthStatus } from "@/types";
 import { ROUTES } from "@/constants";
 
@@ -118,6 +119,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             }
             
             setProfile(userProfile);
+            void ensureBootstrapLocked(userProfile);
             setStatus('authenticated');
           } else {
             // No profile found - likely Firestore rules blocking or new user

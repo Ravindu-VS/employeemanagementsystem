@@ -67,7 +67,18 @@ export interface UserProfile extends User {
   supervisorId?: string;
   assignedSites: string[];
   dailyRate: number;   // Per day payment
-  otRate: number;      // OT hourly rate
+  /** @deprecated stored value is ignored — OT rate is always dailyRate ÷ 8 */
+  otRate: number;
+  /** Daily salary history; the rate effective on each attendance date is used. */
+  salaryHistory?: SalaryHistoryEntry[];
+  /** Previous worker IDs (attendance stored under them still belongs here). */
+  formerWorkerIds?: string[];
+  removedAt?: Date;
+  /** Per-site-visit pay for multi-site roles (Supervisor). Falls back to settings. */
+  siteVisitRate?: number;
+  /** Driver details (role = driver) */
+  driverLicenseNumber?: string;
+  vehicleId?: string;
   hourlyRate: number;  // Legacy / calculated
   weeklyRate: number;  // Legacy / calculated
   payType: PayType;    // How salary is calculated
@@ -80,7 +91,15 @@ export interface UserProfile extends User {
   dropLocation?: string;
   distance?: number;
   transportRate?: number;
-  transportRateType?: 'per_km' | 'per_day' | 'per_week' | 'per_site';
+  transportRateType?: 'per_km' | 'per_day' | 'per_week' | 'per_site' | 'distance_band';
+}
+
+export interface SalaryHistoryEntry {
+  dailyRate: number;
+  effectiveFrom: string; // yyyy-MM-dd (Colombo calendar date)
+  changedBy?: string;
+  changedAt?: string;    // ISO timestamp
+  reason?: string;
 }
 
 export interface BankDetails {

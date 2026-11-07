@@ -11,11 +11,11 @@ import {
   getPaginatedDocuments,
   createDocument,
   updateDocument,
-  deleteDocument,
   query,
   where,
   orderBy,
 } from '@/lib/firebase/firestore';
+import { auditAction } from './audit-service';
 import { COLLECTIONS } from '@/constants';
 import type { 
   WorkSite, 
@@ -124,13 +124,14 @@ export async function updateSite(
 }
 
 /**
- * Update site status
+ * Update site status. isActive is kept consistent with the status so every
+ * reader (attendance site picker, reports) sees the same state.
  */
 export async function updateSiteStatus(
   siteId: string,
   status: SiteStatus
 ): Promise<void> {
-  const updates: Partial<WorkSite> = { status };
+  const updates: Partial<WorkSite> = { status, isActive: !['inactive', 'archived', 'cancelled'].includes(status) };
   
   // Set completion date if marking as completed
   if (status === 'completed') {
@@ -138,13 +139,19 @@ export async function updateSiteStatus(
   }
   
   await updateDocument<WorkSite>(COLLECTIONS.SITES, siteId, updates);
+  await auditAction('update', 'sites', siteId, { newValue: { status } });
 }
 
 /**
- * Delete a site
+ * Archive a site (kept for history; legacy name retained for callers)
  */
 export async function deleteSite(siteId: string): Promise<void> {
-  await deleteDocument(COLLECTIONS.SITES, siteId);
+  // Sites are never hard-deleted: attendance and payroll history reference
+  // them. "Delete" archives the site (hidden from new attendance).
+  await updateDocument<WorkSite>(COLLECTIONS.SITES, siteId, {
+    status: 'archived',
+    isActive: false,
+  } as Partial<WorkSite>);
 }
 
 /**

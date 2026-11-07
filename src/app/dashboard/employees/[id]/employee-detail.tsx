@@ -34,6 +34,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { getEmployee, getEmployeeAttendanceSummary, getEmployeeAdvances, getEmployeeLoans, deactivateEmployee, reactivateEmployee, deleteEmployee } from '@/services';
 import { createAuditLog } from '@/services/audit-service';
+import { ACCESS_MATRIX } from '@/domain/roles';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { formatDate } from '@/lib/date-utils';
@@ -58,7 +59,7 @@ export default function EmployeeDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { toast } = useToast();
-  const { isAuthorized, profile } = useRequireRole(['owner', 'ceo', 'manager', 'supervisor']);
+  const { isAuthorized, profile } = useRequireRole(ACCESS_MATRIX.employees);
   const employeeId = params.id as string;
   const canManage = profile?.role === 'owner' || profile?.role === 'ceo' || profile?.role === 'manager';
 
@@ -77,13 +78,13 @@ export default function EmployeeDetailPage() {
   const { data: attendanceSummary } = useQuery({
     queryKey: ['employee-attendance', employeeId],
     queryFn: () => getEmployeeAttendanceSummary(
-      employeeId,
+      { uid: employee!.uid, workerId: employee!.workerId },
       {
-        start: new Date(new Date().setDate(new Date().getDate() - 30)),
+        start: new Date(Date.now() - 30 * 86_400_000),
         end: new Date(),
       }
     ),
-    enabled: !!employeeId,
+    enabled: !!employee,
   });
 
   // Fetch advances
@@ -140,7 +141,7 @@ export default function EmployeeDetailPage() {
 
   const handleDelete = async () => {
     if (!employee) return;
-    if (!confirm(`Are you sure you want to permanently delete ${employee.displayName || 'this employee'}? This action cannot be undone.`)) {
+    if (!confirm(`Are you sure you want to remove ${employee.displayName || 'this employee'}? They are deactivated and hidden from new attendance; past attendance and payroll are kept.`)) {
       return;
     }
     try {
@@ -157,8 +158,8 @@ export default function EmployeeDetailPage() {
         });
       }
       toast({
-        title: 'Employee Deleted',
-        description: `${employee.displayName || 'Employee'} has been permanently deleted.`,
+        title: 'Employee removed',
+        description: `${employee.displayName || 'Employee'} has been removed (history kept).`,
       });
       router.push(ROUTES.EMPLOYEES.LIST);
     } catch (error: any) {

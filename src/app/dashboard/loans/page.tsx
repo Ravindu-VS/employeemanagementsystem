@@ -43,6 +43,7 @@ import {
   calculateLoanSchedule,
   getLoanStats,
 } from '@/services';
+import { ACCESS_MATRIX } from '@/domain/roles';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, cn } from '@/lib/utils';
@@ -91,7 +92,7 @@ const statusConfig: Record<LoanStatus, {
 export default function LoansPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { isAuthorized, user } = useRequireRole(['owner', 'ceo', 'manager']);
+  const { isAuthorized, user } = useRequireRole(ACCESS_MATRIX.loans);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<LoanStatus | 'all'>('all');

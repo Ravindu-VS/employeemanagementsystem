@@ -2,6 +2,8 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { ACCESS_MATRIX } from '@/domain/roles';
+import { useRequireRole } from '@/components/providers/auth-provider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,6 +38,7 @@ const ACTION_TYPES = [
 ];
 
 export default function AuditLogsPage() {
+  const { isAuthorized } = useRequireRole(ACCESS_MATRIX.audit_logs);
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState('all');
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>({
@@ -45,6 +48,7 @@ export default function AuditLogsPage() {
 
   // Fetch all recent audit logs (simple single-field orderBy, no compound indexes)
   const { data: logs = [], isLoading, refetch, isRefetching } = useQuery({
+    enabled: isAuthorized,
     queryKey: ['audit-logs'],
     queryFn: () => getAuditLogs(200),
   });
@@ -127,6 +131,8 @@ export default function AuditLogsPage() {
     a.click();
     window.URL.revokeObjectURL(url);
   };
+
+  if (!isAuthorized) return null;
 
   return (
     <div className="space-y-6">

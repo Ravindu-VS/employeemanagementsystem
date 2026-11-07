@@ -37,6 +37,31 @@ export async function createAuditLog(params: CreateAuditLogParams): Promise<void
 }
 
 /**
+ * Audit an action performed by the signed-in user (actor taken from the auth
+ * store). Used by services so every important write is audited in one place.
+ */
+export async function auditAction(
+  action: AuditAction,
+  resource: string,
+  resourceId: string,
+  change?: { oldValue?: Record<string, unknown>; newValue?: Record<string, unknown> }
+): Promise<void> {
+  const { useAuthStore } = await import('@/store/auth-store');
+  const profile = useAuthStore.getState().profile;
+  if (!profile) return;
+  await createAuditLog({
+    userId: profile.uid,
+    userName: profile.displayName || profile.email,
+    userRole: (profile.role || 'helper') as UserRole,
+    action,
+    resource,
+    resourceId,
+    ...(change?.oldValue ? { oldValue: change.oldValue } : {}),
+    ...(change?.newValue ? { newValue: change.newValue } : {}),
+  });
+}
+
+/**
  * Fetch recent audit logs (simple query, no compound indexes needed)
  */
 export async function getAuditLogs(maxResults = 200): Promise<AuditLog[]> {

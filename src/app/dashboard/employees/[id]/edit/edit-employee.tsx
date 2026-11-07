@@ -33,11 +33,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { getEmployee, updateEmployee } from '@/services';
-import { createAuditLog } from '@/services/audit-service';
+import { ACCESS_MATRIX } from '@/domain/roles';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { ROUTES, USER_ROLES } from '@/constants';
 import { calculateOtRate } from '@/domain/payroll';
+import { toISODateString } from '@/lib/date-utils';
 import { formatCurrency } from '@/lib/utils';
 import type { UserRole } from '@/types';
 
@@ -65,7 +66,10 @@ const employeeSchema = z.object({
   dropLocation: z.string().optional(),
   distance: z.preprocess((val) => (val === '' || val === undefined ? 0 : Number(val)), z.number().min(0).optional()),
   transportRate: z.preprocess((val) => (val === '' || val === undefined ? 0 : Number(val)), z.number().min(0).optional()),
-  transportRateType: z.enum(['per_km', 'per_day', 'per_week', 'per_site']).optional(),
+  transportRateType: z.enum(['per_km', 'per_day', 'per_week', 'per_site', 'distance_band']).optional(),
+  siteVisitRate: z.preprocess((val) => (val === '' || val === undefined || Number.isNaN(Number(val)) ? undefined : Number(val)), z.number().min(0).optional()),
+  driverLicenseNumber: z.string().optional(),
+  vehicleId: z.string().optional(),
 });
 
 type EmployeeFormData = z.infer<typeof employeeSchema>;
@@ -74,7 +78,7 @@ export default function EditEmployeePage() {
   const params = useParams();
   const router = useRouter();
   const { toast } = useToast();
-  const { isAuthorized, profile } = useRequireRole(['owner', 'ceo', 'manager']);
+  const { isAuthorized, profile } = useRequireRole(ACCESS_MATRIX.employees_manage);
   const employeeId = params.id as string;
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -100,6 +104,7 @@ export default function EditEmployeePage() {
   });
 
   const selectedRole = watch('role');
+  const canAssignRoles = profile?.role === 'owner' || profile?.role === 'ceo';
   const dailyRate = watch('dailyRate');
   const calculatedOtRate = calculateOtRate(dailyRate || 0);
 
@@ -114,7 +119,7 @@ export default function EditEmployeePage() {
         employeeId: employee.workerId || '',
         dailyRate: employee.dailyRate || 0,
         joinDate: employee.joiningDate
-          ? new Date(employee.joiningDate).toISOString().split('T')[0]
+          ? toISODateString(employee.joiningDate)
           : '',
         emergencyContact: {
           name: employee.emergencyContact || '',
@@ -132,6 +137,9 @@ export default function EditEmployeePage() {
         distance: employee.distance || 0,
         transportRate: employee.transportRate || 0,
         transportRateType: employee.transportRateType || 'per_day',
+        siteVisitRate: employee.siteVisitRate,
+        driverLicenseNumber: employee.driverLicenseNumber || '',
+        vehicleId: employee.vehicleId || '',
       });
     }
   }, [employee, reset]);
@@ -156,21 +164,15 @@ export default function EditEmployeePage() {
         distance: data.distance || 0,
         transportRate: data.transportRate || 0,
         transportRateType: data.transportRateType || 'per_day',
+        ...(data.siteVisitRate !== undefined ? { siteVisitRate: data.siteVisitRate } : {}),
+        ...(data.role === 'driver' ? { driverLicenseNumber: data.driverLicenseNumber || '', vehicleId: data.vehicleId || '' } : {}),
       };
+      // Only Owner/CEO may change roles (also enforced by Firestore rules).
+      if (!canAssignRoles) updateData.role = employee?.role;
 
       await updateEmployee(employeeId, updateData as any);
 
-      if (profile) {
-        createAuditLog({
-          userId: profile.uid,
-          userName: profile.displayName || profile.email,
-          userRole: profile.role!,
-          action: 'update',
-          resource: 'employees',
-          resourceId: employeeId,
-          newValue: { displayName: data.displayName, role: data.role },
-        });
-      }
+      // Audit entry (role / salary / status changes) is written by updateEmployee.
 
       toast({
         title: 'Employee Updated',
@@ -293,12 +295,16 @@ export default function EditEmployeePage() {
                   <select
                     id="role"
                     {...register('role')}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    disabled={!canAssignRoles}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
                   >
-                    {Object.entries(USER_ROLES).map(([key, role]) => (
-                      <option key={key} value={key}>{role.label}</option>
-                    ))}
+                    {Object.entries(USER_ROLES)
+                      .filter(([key]) => profile?.role === 'owner' || key !== 'owner')
+                      .map(([key, role]) => (
+                        <option key={key} value={key}>{role.label}</option>
+                      ))}
                   </select>
+                  {!canAssignRoles && <p className="text-xs text-muted-foreground">Only the Owner or CEO can change roles.</p>}
                   <p className="text-xs text-muted-foreground">
                     Level {USER_ROLES[selectedRole as UserRole]?.level}
                   </p>
@@ -361,8 +367,28 @@ export default function EditEmployeePage() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                OT rate is calculated as: Daily Rate ÷ 8 hours
+                OT rate is calculated as: Daily Rate ÷ 8 hours. Changing the daily rate keeps a salary history — past weeks stay at the old rate.
               </p>
+              {selectedRole === 'supervisor' && (
+                <div className="space-y-2">
+                  <Label htmlFor="siteVisitRate">Pay per site visit (LKR)</Label>
+                  <Input id="siteVisitRate" type="number" placeholder="Default from Settings (2000)" {...register('siteVisitRate')} />
+                  <p className="text-xs text-muted-foreground">Supervisors are paid per distinct site visited per day. Leave empty to use the company default.</p>
+                </div>
+              )}
+              {selectedRole === 'driver' && (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="driverLicenseNumber">Driving licence no.</Label>
+                    <Input id="driverLicenseNumber" {...register('driverLicenseNumber')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="vehicleId">Assigned vehicle (reg. no.)</Label>
+                    <Input id="vehicleId" placeholder="e.g. WP CAB-1234" {...register('vehicleId')} />
+                  </div>
+                  <p className="text-xs text-muted-foreground sm:col-span-2">Drivers are paid their daily salary per shift (morning/evening = 0.5 day each). They are not site workers.</p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -488,6 +514,7 @@ export default function EditEmployeePage() {
                     <option value="per_week">Per Week</option>
                     <option value="per_km">Per KM</option>
                     <option value="per_site">Per Site</option>
+                    <option value="distance_band">Distance band (Settings)</option>
                   </select>
                 </div>
               </div>

@@ -33,9 +33,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { createEmployee, generateWorkerId } from '@/services';
+import { todayISO } from '@/lib/date-utils';
 import { createAuditLog } from '@/services/audit-service';
 import { createUserWithEmailAndPassword, updateProfile, signOut as firebaseSignOut } from 'firebase/auth';
 import { secondaryAuth } from '@/lib/firebase/config';
+import { ACCESS_MATRIX } from '@/domain/roles';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { ROUTES, USER_ROLES } from '@/constants';
@@ -78,7 +80,7 @@ export default function CreateEmployeePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { isAuthorized, profile } = useRequireRole(['owner', 'ceo', 'manager']);
+  const { isAuthorized, profile } = useRequireRole(ACCESS_MATRIX.employees_manage);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const {
@@ -130,9 +132,10 @@ export default function CreateEmployeePage() {
         phone: data.phone || '',
         address: data.address,
         dailyRate: data.dailyRate,
-        hourlyRate: 0,
-        weeklyRate: 0,
-        joiningDate: data.joinDate ? new Date(data.joinDate) : new Date(),
+        hourlyRate: data.dailyRate / 8,
+        weeklyRate: data.dailyRate * 6,
+        salaryHistory: [{ dailyRate: data.dailyRate, effectiveFrom: data.joinDate || todayISO(), changedBy: profile?.uid, changedAt: new Date().toISOString(), reason: 'Initial salary' }],
+        joiningDate: data.joinDate ? new Date(`${data.joinDate}T12:00:00+05:30`) : new Date(),
         assignedSites: [],
         emergencyContact: data.emergencyContact?.name,
         emergencyPhone: data.emergencyContact?.phone,
@@ -285,7 +288,10 @@ export default function CreateEmployeePage() {
                     {...register('role')}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
-                    {Object.entries(USER_ROLES).map(([key, role]) => (
+                    {Object.entries(USER_ROLES)
+                      // Owner/CEO/Manager accounts are created only by Owner/CEO (enforced by Firestore rules)
+                      .filter(([key]) => profile?.role === 'owner' || (profile?.role === 'ceo' ? !['owner', 'ceo'].includes(key) : !['owner', 'ceo', 'manager'].includes(key)))
+                      .map(([key, role]) => (
                       <option key={key} value={key}>{role.label}</option>
                     ))}
                   </select>
