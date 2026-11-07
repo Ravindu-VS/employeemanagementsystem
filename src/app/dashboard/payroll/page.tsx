@@ -51,6 +51,7 @@ import {
   getDriverAttendanceForDateRange,
   markAdvanceCarriedForward,
   resetCarryForwardForWeek,
+  getActiveLoans,
 } from '@/services';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
@@ -130,7 +131,9 @@ interface EmployeeWeekSummary {
   dailyRate: number;
   otRate: number;
   siteBreakdowns: SiteBreakdown[];
-  advances: Advance[];
+  advances: AdvanceRequest[];
+  transportAllowance?: number;
+  loanDeductions?: any[];
 }
 
 // =====================================================
@@ -216,6 +219,11 @@ export default function PayrollPage() {
     queryFn: getAllPendingAdvances,
   });
 
+  const { data: activeLoans = [] } = useQuery({
+    queryKey: ['active-loans'],
+    queryFn: getActiveLoans,
+  });
+
   // Auto-check all un-deducted advances for deduction
   useEffect(() => {
     if (!isLoaded || pendingAdvances.length === 0) return;
@@ -227,7 +235,7 @@ export default function PayrollPage() {
       const autoSelections: Record<string, boolean> = {};
       pendingAdvances.forEach(adv => {
         // Auto-check only approved, un-deducted advances
-        if (!adv.deducted && adv.status === 'approved') {
+        if (!adv.isDeducted && adv.status === 'approved') {
           autoSelections[adv.id] = true;
           console.log(`✅ [AUTO-CHECK] ${adv.id}: ${adv.amount} LKR (status=${adv.status})`);
         }
@@ -248,7 +256,7 @@ export default function PayrollPage() {
       console.log(`📊 [PAYROLL DEBUG] Fetched advances: count=${pendingAdvances.length}`);
       if (pendingAdvances.length > 0) {
         pendingAdvances.forEach(a => {
-          console.log(`   → ${a.id}: emp=${a.employeeId}, amt=${a.amount}, status=${a.status}, deducted=${a.deducted}`);
+          console.log(`   → ${a.id}: emp=${a.employeeId}, amt=${a.amount}, status=${a.status}, deducted=${a.isDeducted}`);
         });
       } else {
         console.log('   ❌ NO ADVANCES FOUND IN DATABASE');
@@ -334,7 +342,9 @@ export default function PayrollPage() {
 
     // Add driver attendance
     for (const record of driverAttendance) {
-      if (!record.present) continue;
+      const morningVal = record.morningPresent ?? record.present ?? false;
+      const eveningVal = record.eveningPresent ?? record.present ?? false;
+      if (!morningVal && !eveningVal) continue;
 
       const emp = employeeMap.get(record.workerId);
       if (!emp) continue;
@@ -346,7 +356,7 @@ export default function PayrollPage() {
         summary = {
           employeeId: emp.uid,
           employeeName: emp.displayName || emp.email,
-          employeeRole: emp.role,
+          employeeRole: (emp.role || 'driver') as UserRole,
           daysWorked: 0,
           otHours: 0,
           grossPay: 0,
@@ -354,6 +364,7 @@ export default function PayrollPage() {
           otRate: emp.otRate || 0,
           siteBreakdowns: [],
           advances: advancesByEmployee.get(emp.uid) || [],
+          loanDeductions: [],
         };
         summaries.push(summary);
       }
@@ -373,8 +384,16 @@ export default function PayrollPage() {
         summary.siteBreakdowns.push(site);
       }
 
-      site.daysWorked += 1;
-      site.otHours += (record.otHours || 0);
+      let days = 0;
+      if (morningVal) days += 0.5;
+      if (eveningVal) days += 0.5;
+
+      const morningOtVal = record.morningOtHours ?? 0;
+      const eveningOtVal = record.eveningOtHours ?? 0;
+      const otHours = morningOtVal + eveningOtVal + (record.morningOtHours === undefined && record.eveningOtHours === undefined ? (record.otHours || 0) : 0);
+
+      site.daysWorked += days;
+      site.otHours += otHours;
       site.regularPay = site.daysWorked * summary.dailyRate;
       site.otPay = site.otHours * summary.otRate;
       site.totalPay = site.regularPay + site.otPay;
@@ -385,8 +404,52 @@ export default function PayrollPage() {
       summary.grossPay = summary.siteBreakdowns.reduce((s, b) => s + b.totalPay, 0);
     }
 
+    // Post-process summaries to calculate transport allowance and loan deductions
+    summaries.forEach((summary) => {
+      const emp = employeeMap.get(summary.employeeId);
+      if (emp) {
+        // Calculate transport allowance
+        const sitesCount = summary.siteBreakdowns.length;
+        let transportAllowance = 0;
+        if (emp.transportType && emp.transportType !== 'none' && emp.transportType !== 'company_vehicle') {
+          const tRate = emp.transportRate || 0;
+          const distance = emp.distance || 0;
+          const rateType = emp.transportRateType || 'per_day';
+          
+          if (rateType === 'per_km') {
+            transportAllowance = distance * tRate * summary.daysWorked;
+          } else if (rateType === 'per_day') {
+            transportAllowance = tRate * summary.daysWorked;
+          } else if (rateType === 'per_week') {
+            transportAllowance = tRate;
+          } else if (rateType === 'per_site') {
+            transportAllowance = tRate * sitesCount;
+          }
+        }
+        
+        summary.transportAllowance = transportAllowance;
+        
+        // Add transport allowance to grossPay
+        summary.grossPay += transportAllowance;
+        
+        // Get active loan deductions
+        const activeLoan = activeLoans.find((l: any) => l.employeeId === summary.employeeId);
+        const loanDeductions = [];
+        if (activeLoan) {
+          const deduction = Math.min(activeLoan.emiAmount, activeLoan.remainingAmount);
+          loanDeductions.push({
+            loanId: activeLoan.id,
+            emiNumber: activeLoan.paidEmis + 1,
+            emiAmount: deduction,
+            remainingAmount: activeLoan.remainingAmount - deduction,
+          });
+        }
+        summary.loanDeductions = loanDeductions;
+      }
+    });
+
     return summaries.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
-  }, [weekAttendance, driverAttendance, employeeMap, siteNameMap, advancesByEmployee]);
+  }, [weekAttendance, driverAttendance, employeeMap, siteNameMap, advancesByEmployee, activeLoans]);
 
   // ---- SITE TOTALS (using domain engine) ----
 
@@ -412,16 +475,22 @@ export default function PayrollPage() {
     const totalOtHours = employeeSummaries.reduce((s, e) => s + e.otHours, 0);
     const grossPayroll = employeeSummaries.reduce((s, e) => s + e.grossPay, 0);
 
-    // Calculate advance deductions based on CEO checkbox selections (defaults to true)
+    // Calculate deductions based on selections and active loans
     let advanceDeductions = 0;
+    let loanDeductions = 0;
     for (const emp of employeeSummaries) {
       for (const adv of emp.advances) {
         if (deductionSelections[adv.id] !== false) {
           advanceDeductions += adv.amount;
         }
       }
+      if (emp.loanDeductions) {
+        for (const loan of emp.loanDeductions) {
+          loanDeductions += loan.emiAmount;
+        }
+      }
     }
-    return buildGrandTotals(employeeSummaries, advanceDeductions);
+    return buildGrandTotals(employeeSummaries, advanceDeductions, loanDeductions);
   }, [employeeSummaries, deductionSelections]);
 
   // ---- FILTER ----
@@ -697,6 +766,7 @@ export default function PayrollPage() {
               totalOtHours={grandTotals.totalOtHours}
               grossPayroll={grandTotals.grossPayroll}
               advanceDeductions={grandTotals.advanceDeductions}
+              loanDeductions={grandTotals.loanDeductions}
               finalPayroll={grandTotals.finalPayroll}
               siteTotals={siteTotals}
               siteWorkerSummaries={siteWorkerSummaries}
@@ -754,7 +824,7 @@ function LiveWorkerCard({
             <div className="flex items-center gap-2">
               <span className={cn(
                 'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
-                roleBadgeColors[(summary.employeeRole as any) || 'helper']
+                roleBadgeColors[summary.employeeRole]
               )}>
                 {summary.employeeRole}
               </span>

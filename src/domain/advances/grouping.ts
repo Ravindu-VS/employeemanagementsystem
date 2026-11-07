@@ -13,9 +13,14 @@
  *
  * ⚠️ FIRESTORE COMPATIBILITY:
  * Handles both old (isDeducted) and new (deducted) field names
+ * 
+ * WorkForceX — Cleaned architecture (debug logging via logger utility)
  */
 
 import { AdvanceRequest } from "@/types";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger('AdvanceGrouping');
 
 /**
  * Group APPROVED + UN-DEDUCTED advances by employee ID
@@ -35,11 +40,6 @@ export function groupAdvancesByEmployee(
 ): Map<string, any[]> {
   const map = new Map<string, any[]>();
 
-  if (typeof window !== 'undefined') {
-    console.log(`📊 [ADVANCE GROUPING START]`);
-    console.log(`   Input: ${pendingAdvances.length} total advances from Firestore`);
-  }
-
   let approvedCount = 0;
   let rejectedCount = 0;
   let deductedCount = 0;
@@ -48,9 +48,6 @@ export function groupAdvancesByEmployee(
     // FILTER 1: Only APPROVED status
     if (adv.status !== 'approved') {
       if (adv.status === 'rejected') rejectedCount++;
-      if (typeof window !== 'undefined') {
-        console.log(`   ❌ SKIP ${adv.id}: status=${adv.status} (must be 'approved')`);
-      }
       continue;
     }
 
@@ -58,9 +55,6 @@ export function groupAdvancesByEmployee(
     const isDed = (adv as any).isDeducted || (adv as any).deducted || false;
     if (isDed) {
       deductedCount++;
-      if (typeof window !== 'undefined') {
-        console.log(`   ❌ SKIP ${adv.id}: already deducted on ${(adv as any).deductionWeek || (adv as any).deductionWeekId}`);
-      }
       continue;
     }
 
@@ -84,22 +78,15 @@ export function groupAdvancesByEmployee(
     const list = map.get(adv.employeeId) || [];
     list.push(mappedAdvance);
     map.set(adv.employeeId, list);
-
-    if (typeof window !== 'undefined') {
-      console.log(`   ✅ INCLUDE ${adv.id}: emp=${adv.employeeId}, amt=${adv.amount} LKR`);
-    }
   }
 
-  if (typeof window !== 'undefined') {
-    console.log(`📊 [ADVANCE GROUPING RESULT]`);
-    console.log(`   Approved & Un-deducted (SHOWN): ${approvedCount}`);
-    console.log(`   Rejected (HIDDEN): ${rejectedCount}`);
-    console.log(`   Already Deducted (HIDDEN): ${deductedCount}`);
-    console.log(`   Employees with advances: ${map.size}`);
-    if (map.size === 0) {
-      console.log('   ⚠️ NO ADVANCES TO SHOW - Check that advances are approved!');
-    }
-  }
+  log.debug('Advance grouping result', {
+    input: pendingAdvances.length,
+    approved: approvedCount,
+    rejected: rejectedCount,
+    deducted: deductedCount,
+    employeesWithAdvances: map.size,
+  });
 
   return map;
 }
@@ -118,12 +105,6 @@ export function calculateSelectedAdvanceDeductions(
 ): number {
   let totalDeductions = 0;
 
-  if (typeof window !== 'undefined') {
-    console.log(`📊 [CALC DEDUCTIONS START]`);
-    const selectedCount = Object.values(deductionSelections).filter(Boolean).length;
-    console.log(`   CEO selected: ${selectedCount} advances for deduction`);
-  }
-
   // For each employee
   for (const emp of employeeSummaries) {
     // For each their un-deducted advances
@@ -131,17 +112,14 @@ export function calculateSelectedAdvanceDeductions(
       // Check if CEO marked it for deduction
       if (deductionSelections[adv.id]) {
         totalDeductions += adv.amount;
-        if (typeof window !== 'undefined') {
-          console.log(`   ✓ ${emp.employeeName}: advance ${adv.id.substring(0, 8)}... = ${adv.amount} LKR`);
-        }
       }
     }
   }
 
-  if (typeof window !== 'undefined') {
-    console.log(`📊 [CALC DEDUCTIONS RESULT]`);
-    console.log(`   Total selected for deduction: ${totalDeductions} LKR`);
-  }
+  log.debug('Calculated advance deductions', {
+    selectedCount: Object.values(deductionSelections).filter(Boolean).length,
+    totalDeductions,
+  });
 
   return totalDeductions;
 }
@@ -200,7 +178,7 @@ export function isCarryForwardAdvance(
     ? advance.requestedAt
     : new Date(advance.requestedAt).toISOString().split('T')[0];
 
-  const isDed = (advance as any).isDeducted || advance.deducted || false;
+  const isDed = advance.isDeducted || false;
 
   return (
     advance.status === 'approved' &&
@@ -222,7 +200,7 @@ export function isNewAdvanceForWeek(
     ? advance.requestedAt
     : new Date(advance.requestedAt).toISOString().split('T')[0];
 
-  const isDed = (advance as any).isDeducted || advance.deducted || false;
+  const isDed = advance.isDeducted || false;
 
   return (
     advance.status === 'approved' &&

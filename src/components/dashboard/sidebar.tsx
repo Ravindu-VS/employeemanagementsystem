@@ -151,7 +151,7 @@ export function Sidebar({ collapsed, onCollapsedChange, userRole }: SidebarProps
               <Building2 className="h-4 w-4 text-white" />
             </div>
             <span className="font-semibold">
-              EMS<span className="text-primary">Admin</span>
+              WorkForce<span className="text-primary">X</span>
             </span>
           </Link>
         )}

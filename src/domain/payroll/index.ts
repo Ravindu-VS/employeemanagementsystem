@@ -1,4 +1,4 @@
-﻿import { UserProfile, SimpleAttendance } from "@/types";
+import { UserProfile, SimpleAttendance } from "@/types";
 import { isHigherRoleMultiSite } from "../roles";
 import { calculateDayFraction, extractOtHours, calculateTotalOtHours } from "../attendance";
 
@@ -37,7 +37,7 @@ export function calculatePayrollBreakdown(
     totalDaysOrSites += fraction;
     totalOtHours += dateOt;
 
-    const basePay = calculateBasePay(worker.dailyRate, fraction, worker.role);
+    const basePay = calculateBasePay(worker.dailyRate, fraction, worker.role || 'helper');
     const otPay = calculateOtPay(worker.dailyRate, dateOt);
 
     totalNormalPay += basePay;

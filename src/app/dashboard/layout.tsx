@@ -99,7 +99,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <Sidebar
           collapsed={sidebarCollapsed}
           onCollapsedChange={setSidebarCollapsed}
-          userRole={profile.role}
+          userRole={profile.role!}
         />
       </div>
 

@@ -616,7 +616,7 @@ export async function bulkMarkSimpleAttendance(
 
   for (const entry of entries) {
     try {
-      const isMultiSite = ['owner', 'ceo', 'manager', 'supervisor'].includes(entry.role);
+      const isMultiSite = ['owner', 'ceo', 'manager', 'supervisor'].includes(entry.role || 'helper');
       const workerRecords = recordsByWorker.get(entry.workerId) || [];
       
       let existing: SimpleAttendance | undefined;
@@ -909,15 +909,17 @@ export async function getWorkerWeeklyAttendanceBySite(
 // =====================================================
 
 /**
- * Mark driver attendance — no site selection, just present/absent + OT
+ * Mark driver attendance — supports morning/evening shifts + OT
  */
 export async function markDriverAttendance(
   data: {
     date: string;
     workerId: string;
     workerName: string;
-    present: boolean;
-    otHours: number;
+    morningPresent: boolean;
+    eveningPresent: boolean;
+    morningOtHours: number;
+    eveningOtHours: number;
     supervisorId: string;
     remarks?: string;
   }
@@ -930,10 +932,15 @@ export async function markDriverAttendance(
   ]);
 
   const payload: Record<string, any> = {
-    present: data.present,
+    morningPresent: data.morningPresent,
+    eveningPresent: data.eveningPresent,
+    morningOtHours: data.morningOtHours,
+    eveningOtHours: data.eveningOtHours,
+    // Backward compatibility fields
+    present: data.morningPresent || data.eveningPresent,
+    otHours: data.morningOtHours + data.eveningOtHours,
     morningSite: null,
     eveningSite: null,
-    otHours: data.otHours,
     supervisorId: data.supervisorId,
     attendanceType: 'driver',
     role: 'driver',
@@ -958,7 +965,15 @@ export async function markDriverAttendance(
  */
 export async function bulkMarkDriverAttendance(
   date: string,
-  entries: { workerId: string; workerName: string; present: boolean; otHours: number; remarks?: string }[],
+  entries: {
+    workerId: string;
+    workerName: string;
+    morningPresent: boolean;
+    eveningPresent: boolean;
+    morningOtHours: number;
+    eveningOtHours: number;
+    remarks?: string;
+  }[],
   supervisorId: string
 ): Promise<{ success: number; failed: number }> {
   const batch = writeBatch(db);
@@ -976,15 +991,22 @@ export async function bulkMarkDriverAttendance(
     try {
       const existing = existingMap.get(entry.workerId);
 
+      const payload = {
+        morningPresent: entry.morningPresent,
+        eveningPresent: entry.eveningPresent,
+        morningOtHours: entry.morningOtHours,
+        eveningOtHours: entry.eveningOtHours,
+        // Backward compatibility fields
+        present: entry.morningPresent || entry.eveningPresent,
+        otHours: entry.morningOtHours + entry.eveningOtHours,
+        remarks: entry.remarks || null,
+        supervisorId,
+        updatedAt: serverTimestamp(),
+      };
+
       if (existing) {
         const docRef = doc(db, SIMPLE_ATTENDANCE_COLLECTION, existing.id);
-        batch.update(docRef, {
-          present: entry.present,
-          otHours: entry.otHours,
-          remarks: entry.remarks || null,
-          supervisorId,
-          updatedAt: serverTimestamp(),
-        });
+        batch.update(docRef, payload);
       } else {
         const newDocRef = doc(collection(db, SIMPLE_ATTENDANCE_COLLECTION));
         batch.set(newDocRef, {
@@ -993,14 +1015,10 @@ export async function bulkMarkDriverAttendance(
           workerName: entry.workerName,
           morningSite: null,
           eveningSite: null,
-          present: entry.present,
-          otHours: entry.otHours,
-          remarks: entry.remarks || null,
-          supervisorId,
           attendanceType: 'driver',
           role: 'driver',
           createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
+          ...payload,
         });
       }
       success++;

@@ -138,6 +138,12 @@ export default function AttendancePage() {
     return map;
   }, [sites]);
 
+  const selectedSite = useMemo(() => {
+    return sites.find((s: any) => s.id === selectedSiteId);
+  }, [sites, selectedSiteId]);
+
+  const isSiteReadOnly = selectedSite?.status === 'completed';
+
   // Build map: workerId -> set of siteIds where worker is marked any shift
   const workerSiteCoverage = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -231,6 +237,7 @@ export default function AttendancePage() {
 
   // Toggle morning checkbox
   const toggleMorning = useCallback((workerId: string) => {
+    if (isSiteReadOnly) return;
     setWorkerRows((prev) =>
       prev.map((row) => {
         if (row.workerId !== workerId) return row;
@@ -262,10 +269,11 @@ export default function AttendancePage() {
       })
     );
     setIsDirty(true);
-  }, [selectedSiteId, employees, toast]);
+  }, [selectedSiteId, employees, toast, isSiteReadOnly]);
 
   // Toggle evening checkbox
   const toggleEvening = useCallback((workerId: string) => {
+    if (isSiteReadOnly) return;
     setWorkerRows((prev) =>
       prev.map((row) => {
         if (row.workerId !== workerId) return row;
@@ -297,17 +305,18 @@ export default function AttendancePage() {
       })
     );
     setIsDirty(true);
-  }, [selectedSiteId, employees, toast]);
+  }, [selectedSiteId, employees, toast, isSiteReadOnly]);
 
   // Update OT hours
   const updateOT = useCallback((workerId: string, hours: number) => {
+    if (isSiteReadOnly) return;
     setWorkerRows((prev) =>
       prev.map((row) =>
         row.workerId === workerId ? { ...row, otHours: Math.max(0, hours) } : row
       )
     );
     setIsDirty(true);
-  }, []);
+  }, [isSiteReadOnly]);
 
   // Save attendance mutation
   const saveMutation = useMutation({
@@ -436,15 +445,28 @@ export default function AttendancePage() {
               className="flex-1 min-w-0 h-10 rounded-md border border-border bg-background px-3 text-sm"
             >
               <option value="">— Select a site —</option>
-              {sites.map((site) => (
-                <option key={site.id} value={site.id}>
-                  {site.name} — {site.address || site.city || ''}
-                </option>
-              ))}
+              {sites
+                .filter((site: any) => site.status !== 'inactive' && site.status !== 'archived')
+                .map((site: any) => (
+                  <option key={site.id} value={site.id}>
+                    {site.name} — {site.address || site.city || ''} {site.status === 'completed' ? '(Completed - Read-Only)' : ''}
+                  </option>
+                ))}
             </select>
           </div>
         </CardContent>
       </Card>
+
+      {isSiteReadOnly && (
+        <Card className="border-yellow-500/30 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
+          <CardContent className="p-3 sm:p-4 flex items-center gap-2">
+            <span className="text-lg">⚠️</span>
+            <p className="text-sm font-medium">
+              This site is marked as Completed and is in Read-Only mode. Attendance cannot be modified.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Multi-site Rules Info */}
       <Card className="border-blue-500/20 bg-blue-500/5">
@@ -530,7 +552,7 @@ export default function AttendancePage() {
             </div>
             <Button
               onClick={() => saveMutation.mutate()}
-              disabled={!isDirty || saveMutation.isPending}
+              disabled={!isDirty || saveMutation.isPending || isSiteReadOnly}
               className="gap-2 w-full sm:w-auto"
               size="lg"
             >
@@ -620,13 +642,15 @@ export default function AttendancePage() {
                             <td className="p-1 sm:p-4 text-center">
                               <button
                                 type="button"
-                                onClick={() => toggleMorning(row.workerId)}
+                                onClick={() => !isSiteReadOnly && toggleMorning(row.workerId)}
                                 className={cn(
                                   'inline-flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-lg border-2 text-lg sm:text-xl font-bold transition-all active:scale-95',
                                   row.morning
                                     ? 'border-green-500 bg-green-500/20 text-green-500'
-                                    : 'border-border text-muted-foreground hover:border-green-500/50'
+                                    : 'border-border text-muted-foreground hover:border-green-500/50',
+                                  isSiteReadOnly && 'opacity-50 cursor-not-allowed'
                                 )}
+                                disabled={isSiteReadOnly}
                                 aria-label={`Morning ${row.morning ? 'present' : 'absent'}`}
                               >
                                 {row.morning ? '✓' : '—'}
@@ -637,13 +661,15 @@ export default function AttendancePage() {
                             <td className="p-1 sm:p-4 text-center">
                               <button
                                 type="button"
-                                onClick={() => toggleEvening(row.workerId)}
+                                onClick={() => !isSiteReadOnly && toggleEvening(row.workerId)}
                                 className={cn(
                                   'inline-flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-lg border-2 text-lg sm:text-xl font-bold transition-all active:scale-95',
                                   row.evening
                                     ? 'border-blue-500 bg-blue-500/20 text-blue-500'
-                                    : 'border-border text-muted-foreground hover:border-blue-500/50'
+                                    : 'border-border text-muted-foreground hover:border-blue-500/50',
+                                  isSiteReadOnly && 'opacity-50 cursor-not-allowed'
                                 )}
+                                disabled={isSiteReadOnly}
                                 aria-label={`Evening ${row.evening ? 'present' : 'absent'}`}
                               >
                                 {row.evening ? '✓' : '—'}
@@ -661,7 +687,11 @@ export default function AttendancePage() {
                                 onChange={(e) =>
                                   updateOT(row.workerId, parseFloat(e.target.value) || 0)
                                 }
-                                className="h-10 w-16 sm:h-12 sm:w-20 rounded-lg border border-border bg-background text-center text-xs sm:text-sm font-bold focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                                disabled={isSiteReadOnly}
+                                className={cn(
+                                  "h-10 w-16 sm:h-12 sm:w-20 rounded-lg border border-border bg-background text-center text-xs sm:text-sm font-bold focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary",
+                                  isSiteReadOnly && "opacity-50 cursor-not-allowed"
+                                )}
                               />
                             </td>
 
@@ -709,7 +739,7 @@ export default function AttendancePage() {
             <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background p-4 shadow-lg md:hidden">
               <Button
                 onClick={() => saveMutation.mutate()}
-                disabled={saveMutation.isPending}
+                disabled={saveMutation.isPending || isSiteReadOnly}
                 className="w-full gap-2"
                 size="lg"
               >
@@ -749,8 +779,10 @@ export default function AttendancePage() {
 interface DriverRow {
   workerId: string;
   workerName: string;
-  present: boolean;
-  otHours: number;
+  morningPresent: boolean;
+  eveningPresent: boolean;
+  morningOtHours: number;
+  eveningOtHours: number;
   remarks: string;
 }
 
@@ -793,12 +825,14 @@ function DriversAttendanceSection({
     );
 
     const rows: DriverRow[] = drivers.map((emp: any) => {
-      const existing = existingMap.get(emp.workerId || emp.uid);
+      const existing: any = existingMap.get(emp.workerId || emp.uid);
       return {
         workerId: emp.workerId || emp.uid,
         workerName: emp.displayName || emp.email,
-        present: existing?.present ?? false,
-        otHours: existing?.otHours ?? 0,
+        morningPresent: existing?.morningPresent ?? existing?.present ?? false,
+        eveningPresent: existing?.eveningPresent ?? existing?.present ?? false,
+        morningOtHours: existing?.morningOtHours ?? 0,
+        eveningOtHours: existing?.eveningOtHours ?? 0,
         remarks: existing?.remarks ?? '',
       };
     });
@@ -814,8 +848,10 @@ function DriversAttendanceSection({
       const entries = driverRows.map((row) => ({
         workerId: row.workerId,
         workerName: row.workerName,
-        present: row.present,
-        otHours: row.otHours,
+        morningPresent: row.morningPresent,
+        eveningPresent: row.eveningPresent,
+        morningOtHours: row.morningOtHours,
+        eveningOtHours: row.eveningOtHours,
         remarks: row.remarks,
       }));
       return bulkMarkDriverAttendance(dateStr, entries, profile.uid);
@@ -835,7 +871,8 @@ function DriversAttendanceSection({
 
   if (drivers.length === 0) return null;
 
-  const presentCount = driverRows.filter((r) => r.present).length;
+  const morningCount = driverRows.filter((r) => r.morningPresent).length;
+  const eveningCount = driverRows.filter((r) => r.eveningPresent).length;
 
   return (
     <div className="space-y-4 mt-8">
@@ -845,10 +882,10 @@ function DriversAttendanceSection({
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-teal-500/20">
               <Clock className="h-4 w-4 text-teal-500" />
             </span>
-            Drivers Attendance
+            Drivers Attendance (Shifts)
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            {presentCount} of {driverRows.length} drivers present
+            Morning: {morningCount} present | Evening: {eveningCount} present
           </p>
         </div>
         <Button
@@ -877,8 +914,10 @@ function DriversAttendanceSection({
                 <thead>
                   <tr className="border-b border-border text-left">
                     <th className="p-4 font-medium text-muted-foreground">Driver</th>
-                    <th className="p-4 text-center font-medium text-muted-foreground">Present</th>
-                    <th className="p-4 text-center font-medium text-muted-foreground">OT (hrs)</th>
+                    <th className="p-4 text-center font-medium text-muted-foreground">Morning</th>
+                    <th className="p-4 text-center font-medium text-muted-foreground">Evening</th>
+                    <th className="p-4 text-center font-medium text-muted-foreground">Morning OT</th>
+                    <th className="p-4 text-center font-medium text-muted-foreground">Evening OT</th>
                     <th className="p-4 font-medium text-muted-foreground">Remarks</th>
                   </tr>
                 </thead>
@@ -901,47 +940,93 @@ function DriversAttendanceSection({
                           </div>
                         </div>
                       </td>
+                      {/* Morning Present */}
                       <td className="p-4 text-center">
                         <button
                           type="button"
                           onClick={() => {
                             setDriverRows((prev) =>
                               prev.map((r) =>
-                                r.workerId === row.workerId ? { ...r, present: !r.present } : r
+                                r.workerId === row.workerId ? { ...r, morningPresent: !r.morningPresent } : r
                               )
                             );
                             setIsDirty(true);
                           }}
                           className={cn(
-                            'inline-flex h-12 w-12 items-center justify-center rounded-lg border-2 text-xl font-bold transition-all active:scale-95',
-                            row.present
+                            'inline-flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-lg border-2 text-lg sm:text-xl font-bold transition-all active:scale-95',
+                            row.morningPresent
                               ? 'border-green-500 bg-green-500/20 text-green-500'
                               : 'border-border text-muted-foreground hover:border-green-500/50'
                           )}
                         >
-                          {row.present ? '✓' : '—'}
+                          {row.morningPresent ? '✓' : '—'}
                         </button>
                       </td>
+                      {/* Evening Present */}
+                      <td className="p-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDriverRows((prev) =>
+                              prev.map((r) =>
+                                r.workerId === row.workerId ? { ...r, eveningPresent: !r.eveningPresent } : r
+                              )
+                            );
+                            setIsDirty(true);
+                          }}
+                          className={cn(
+                            'inline-flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-lg border-2 text-lg sm:text-xl font-bold transition-all active:scale-95',
+                            row.eveningPresent
+                              ? 'border-blue-500 bg-blue-500/20 text-blue-500'
+                              : 'border-border text-muted-foreground hover:border-blue-500/50'
+                          )}
+                        >
+                          {row.eveningPresent ? '✓' : '—'}
+                        </button>
+                      </td>
+                      {/* Morning OT */}
                       <td className="p-4 text-center">
                         <input
                           type="number"
                           min="0"
                           max="12"
                           step="0.5"
-                          value={row.otHours}
+                          value={row.morningOtHours}
                           onChange={(e) => {
                             setDriverRows((prev) =>
                               prev.map((r) =>
                                 r.workerId === row.workerId
-                                  ? { ...r, otHours: Math.max(0, parseFloat(e.target.value) || 0) }
+                                  ? { ...r, morningOtHours: Math.max(0, parseFloat(e.target.value) || 0) }
                                   : r
                               )
                             );
                             setIsDirty(true);
                           }}
-                          className="h-12 w-16 rounded-lg border border-border bg-background text-center text-lg font-bold focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                          className="h-10 w-16 rounded-lg border border-border bg-background text-center text-xs sm:text-sm font-bold focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                         />
                       </td>
+                      {/* Evening OT */}
+                      <td className="p-4 text-center">
+                        <input
+                          type="number"
+                          min="0"
+                          max="12"
+                          step="0.5"
+                          value={row.eveningOtHours}
+                          onChange={(e) => {
+                            setDriverRows((prev) =>
+                              prev.map((r) =>
+                                r.workerId === row.workerId
+                                  ? { ...r, eveningOtHours: Math.max(0, parseFloat(e.target.value) || 0) }
+                                  : r
+                              )
+                            );
+                            setIsDirty(true);
+                          }}
+                          className="h-10 w-16 rounded-lg border border-border bg-background text-center text-xs sm:text-sm font-bold focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                      </td>
+                      {/* Remarks */}
                       <td className="p-4">
                         <input
                           type="text"

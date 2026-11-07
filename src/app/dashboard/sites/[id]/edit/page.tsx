@@ -1,7 +1,7 @@
 import EditSitePage from './edit-site';
 
 export function generateStaticParams() {
-  return [];
+  return [{ id: '1' }];
 }
 
 export default function Page() {

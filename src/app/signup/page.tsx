@@ -206,8 +206,8 @@ export default function SignupPage() {
               <Building2 className="h-8 w-8 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-bold">EMS Admin</h1>
-              <p className="text-sm text-muted-foreground">KK & SONS Architectural Services EMS</p>
+              <h1 className="text-xl sm:text-2xl font-bold">WorkForceX</h1>
+              <p className="text-sm text-muted-foreground">Enterprise Workforce Management</p>
             </div>
           </div>
         </div>

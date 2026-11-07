@@ -83,6 +83,14 @@ export default function SiteDetailPage() {
         return 'bg-gray-500/10 text-gray-500 border-gray-500/20';
       case 'completed':
         return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
+      case 'on_hold':
+        return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
+      case 'cancelled':
+        return 'bg-red-500/10 text-red-500 border-red-500/20';
+      case 'inactive':
+        return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
+      case 'archived':
+        return 'bg-slate-500/10 text-slate-500 border-slate-500/20';
       default:
         return 'bg-gray-500/10 text-gray-500 border-gray-500/20';
     }
@@ -90,6 +98,17 @@ export default function SiteDetailPage() {
 
   return (
     <div className="space-y-6">
+      {site.status === 'completed' && (
+        <Card className="border-yellow-500/30 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
+          <CardContent className="p-3 sm:p-4 flex items-center gap-2">
+            <span className="text-lg">⚠️</span>
+            <p className="text-sm font-medium">
+              This site is completed and is in Read-Only mode. Details cannot be edited.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -159,13 +178,13 @@ export default function SiteDetailPage() {
           </CardContent>
         </Card>
 
-        {site.description && (
+        {(site as any).description && (
           <Card className="md:col-span-2">
             <CardHeader>
               <CardTitle className="text-lg">Description</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground">{site.description}</p>
+              <p className="text-sm text-muted-foreground">{(site as any).description}</p>
             </CardContent>
           </Card>
         )}

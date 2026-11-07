@@ -10,10 +10,10 @@
 // =====================================================
 
 export const APP_CONFIG = {
-  name: 'KK & SONS Architectural Services EMS',
-  shortName: 'KK & SONS EMS',
-  version: '1.0.0',
-  description: 'Construction and workforce management platform for KK & SONS Architectural Services',
+  name: 'WorkForceX',
+  shortName: 'WorkForceX',
+  version: '2.0.0',
+  description: 'Enterprise Workforce Management Platform for KK & SONS Architectural Services',
   company: 'KK & SONS Architectural Services',
   supportEmail: 'support@company.com',
   supportPhone: '+94 11 234 5678',
@@ -240,6 +240,8 @@ export const SITE_STATUSES = [
   { value: 'on_hold', label: 'On Hold', color: 'yellow' },
   { value: 'completed', label: 'Completed', color: 'blue' },
   { value: 'cancelled', label: 'Cancelled', color: 'red' },
+  { value: 'inactive', label: 'Inactive', color: 'orange' },
+  { value: 'archived', label: 'Archived', color: 'slate' },
 ] as const;
 
 // =====================================================

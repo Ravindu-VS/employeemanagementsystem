@@ -1,8 +1,8 @@
 {
-  "name": "kk-sons-ems",
-  "version": "1.0.0",
+  "name": "workforcex",
+  "version": "2.0.0",
   "private": true,
-  "description": "Employee Management System - Construction & Workforce Management for KK & SONS Architectural Services",
+  "description": "WorkForceX — Enterprise Workforce Management Platform for KK & SONS Architectural Services",
   "author": "KK & SONS Architectural Services",
   "scripts": {
     "dev": "next dev",

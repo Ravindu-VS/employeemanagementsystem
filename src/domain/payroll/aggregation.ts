@@ -4,11 +4,16 @@
  * =====================================================
  * Core logic for building payroll summaries from attendance records.
  * Extracted from payroll/page.tsx for reusability.
+ * 
+ * WorkForceX — Cleaned architecture (debug logging via logger utility)
  */
 
 import { SimpleAttendance, UserProfile, SiteBreakdown } from "@/types";
 import { isHigherRoleMultiSite } from "../roles";
 import { calculateOtRate, calculateOtPay } from "./index";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger('PayrollAggregation');
 
 /**
  * Intermediate record: attendance converted to site-specific work entries
@@ -36,7 +41,7 @@ export interface EmployeePayrollSummary {
   dailyRate: number;
   otRate: number;
   siteBreakdowns: SiteBreakdown[];
-  advances: any[]; // TODO: type as Advance[]
+  advances: any[];
 }
 
 /**
@@ -60,6 +65,7 @@ export interface PayrollGrandTotals {
   totalOtHours: number;
   grossPayroll: number;
   advanceDeductions: number;
+  loanDeductions?: number;
   finalPayroll: number;
 }
 
@@ -72,27 +78,14 @@ export function buildAttendanceEntries(
   weekAttendance: SimpleAttendance[],
   employeeMap: Map<string, UserProfile>
 ): AttendanceEntry[] {
-  // Debug: log date range and Sunday records
-  if (weekAttendance.length > 0 && typeof window !== 'undefined') {
+  // Audit: log date range
+  if (weekAttendance.length > 0) {
     const dates = weekAttendance.map(r => r.date).sort();
-    const minDate = dates[0];
-    const maxDate = dates[dates.length - 1];
-    const sundayRecords = weekAttendance.filter(r => {
-      const d = new Date(r.date + 'T00:00:00Z');
-      return d.getUTCDay() === 0;
-    });
     const uniqueDates = [...new Set(dates)];
-    console.log('🔍 [SUNDAY-FIX] Attendance records audit:', {
+    log.debug('Attendance records audit', {
       totalRecords: weekAttendance.length,
-      dateRange: { min: minDate, max: maxDate },
+      dateRange: { min: dates[0], max: dates[dates.length - 1] },
       uniqueDatesCount: uniqueDates.length,
-      sundayRecordsCount: sundayRecords.length,
-      sundayDates: sundayRecords.map(r => r.date),
-      allDatesWithWorkers: uniqueDates.map(date => ({
-        date,
-        dayOfWeek: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(date + 'T00:00:00Z').getUTCDay()],
-        recordCount: weekAttendance.filter(r => r.date === date).length,
-      })),
     });
   }
 
@@ -100,29 +93,10 @@ export function buildAttendanceEntries(
   // due to race conditions when marking attendance at multiple sites
   const mergedRecords = mergeDuplicateAttendanceRecords(weekAttendance);
 
-  // Debug: log merged records
-  const premakirthiRecords = mergedRecords.filter(r =>
-    r.siteVisits?.some(v => v.siteId.includes('premakirthi') || v.siteId === 'rTFoxclBsJcrzmti49qF') ||
-    r.morningSite?.includes('premakirthi') ||
-    r.eveningSite?.includes('premakirthi')
-  );
-  if (premakirthiRecords.length > 0 && typeof window !== 'undefined') {
-    console.log('🔍 [DEBUG] Premakirthi attendance records after merge:', {
-      totalRecords: premakirthiRecords.length,
-      records: premakirthiRecords.map(r => ({
-        workerId: r.workerId,
-        date: r.date,
-        siteVisits: r.siteVisits?.map(v => ({ siteId: v.siteId, visited: v.visited })),
-        morningSite: r.morningSite,
-        eveningSite: r.eveningSite,
-      }))
-    });
-  }
-
   const entries: AttendanceEntry[] = [];
   // Track seen (workerId, date, siteId) to prevent duplicates
   const seen = new Set<string>();
-  const duplicatesFound: string[] = []; // For debugging
+  const duplicatesFound: string[] = [];
 
   for (const record of mergedRecords) {
     const emp = employeeMap.get(record.workerId);
@@ -134,11 +108,6 @@ export function buildAttendanceEntries(
     if (isSupervisor) {
       // Supervisor: each visited site counts per siteVisits array
       if (record.siteVisits && record.siteVisits.length > 0) {
-        // Debug: check all visits
-        if (emp.uid && (emp.displayName?.includes('Kanchana') || emp.displayName?.includes('Nimal') || emp.displayName?.includes('Nishantha'))) {
-          console.log(`🔍 [DEBUG] Supervisor ${emp.displayName} on ${record.date} has ${record.siteVisits.length} visits:`, record.siteVisits);
-        }
-
         for (const visit of record.siteVisits) {
           if (visit.visited) {
             const key = `${record.workerId}:${record.date}:${visit.siteId}`;
@@ -154,19 +123,12 @@ export function buildAttendanceEntries(
                 dayFraction: 1.0, // Supervisor full day per site
               });
             } else {
-              // Log duplicate for debugging
               duplicatesFound.push(`Duplicate supervisor entry: ${emp.displayName || emp.email} @ ${visit.siteId} on ${record.date}`);
-            }
-          } else {
-            // Visit not marked as visited - log this
-            if (emp.uid && (emp.displayName?.includes('Kanchana') || emp.displayName?.includes('Nimal') || emp.displayName?.includes('Nishantha'))) {
-              console.warn(`⚠️ [DEBUG] Supervisor ${emp.displayName} has visit.visited=false for ${visit.siteId} on ${record.date}`);
             }
           }
         }
       } else if (record.otHours && record.otHours > 0) {
         // Fallback for supervisors with legacy otHours but no siteVisits
-        // Try to assign to morningSite or eveningSite if available
         const fallbackSite = record.eveningSite || record.morningSite;
         if (fallbackSite) {
           const key = `${record.workerId}:${record.date}:${fallbackSite}`;
@@ -179,7 +141,7 @@ export function buildAttendanceEntries(
               siteId: fallbackSite,
               covered: true,
               otHours: record.otHours,
-              dayFraction: 1.0, // Supervisor full day
+              dayFraction: 1.0,
             });
           } else {
             duplicatesFound.push(`Duplicate supervisor fallback: ${emp.displayName || emp.email} @ ${fallbackSite} on ${record.date}`);
@@ -197,30 +159,9 @@ export function buildAttendanceEntries(
       const hasEvening = !!record.eveningSite;
       const sameShift = hasMorning && hasEvening && record.morningSite === record.eveningSite;
 
-      // Debug for specific workers
-      if (emp.uid && (emp.displayName?.includes('Nimal') || emp.displayName?.includes('Nishantha') || emp.displayName?.includes('Nadhan') || emp.displayName?.includes('Nuwan'))) {
-        console.log(`🔍 [DEBUG] Labor ${emp.displayName} on ${record.date}: hasMorning=${hasMorning} (${record.morningSite}), hasEvening=${hasEvening} (${record.eveningSite}), sameShift=${sameShift}`);
-      }
-
-      // Debug: log records with no shifts (critical for finding missing workers)
-      if (!hasMorning && !hasEvening && typeof window !== 'undefined') {
-        const siteOtHoursStr = record.siteOtHours ? JSON.stringify(record.siteOtHours) : 'none';
-        const genOt = Number(record.otHours || 0);
-        const hasPositiveOt = siteOtHoursStr !== 'none' && siteOtHoursStr !== '{}'
-          ? Object.values(record.siteOtHours!).some(v => Number(v) > 0)
-          : genOt > 0;
-        console.warn(`⚠️ [ATTENDANCE-CHECK] Labor ${emp.displayName || emp.email} on ${record.date}:
-  morningSite: ${record.morningSite}
-  eveningSite: ${record.eveningSite}
-  otHours: ${genOt}
-  siteOtHours: ${siteOtHoursStr}
-  hasPositiveOT: ${hasPositiveOt}
-  → Will ${hasPositiveOt ? 'BE INCLUDED' : 'BE EXCLUDED'} from payroll`);
-      }
-
       if (sameShift) {
         // Case 1: Both shifts at same site = 1 full day
-        const siteId = record.morningSite!; // Guaranteed non-null from sameShift check
+        const siteId = record.morningSite!;
         const key = `${record.workerId}:${record.date}:${siteId}`;
         if (!seen.has(key)) {
           seen.add(key);
@@ -231,7 +172,7 @@ export function buildAttendanceEntries(
             siteId,
             covered: true,
             otHours: record.siteOtHours?.[siteId] || 0,
-            dayFraction: 1.0, // ✅ Full day, not 2x 0.5
+            dayFraction: 1.0, // Full day, not 2x 0.5
           });
         } else {
           duplicatesFound.push(`Duplicate labor entry: ${emp.displayName || emp.email} full-day @ ${siteId} on ${record.date}`);
@@ -249,7 +190,7 @@ export function buildAttendanceEntries(
               siteId: record.morningSite,
               covered: true,
               otHours: record.siteOtHours?.[record.morningSite] || 0,
-              dayFraction: 0.5, // Half-day
+              dayFraction: 0.5,
             });
           } else {
             duplicatesFound.push(`Duplicate labor entry: ${emp.displayName || emp.email} morning @ ${record.morningSite} on ${record.date}`);
@@ -267,14 +208,14 @@ export function buildAttendanceEntries(
               siteId: record.eveningSite,
               covered: true,
               otHours: record.siteOtHours?.[record.eveningSite] || 0,
-              dayFraction: 0.5, // Half-day
+              dayFraction: 0.5,
             });
           } else {
             duplicatesFound.push(`Duplicate labor entry: ${emp.displayName || emp.email} evening @ ${record.eveningSite} on ${record.date}`);
           }
         }
 
-        // ⚠️ CRITICAL VALIDATION: Record with no shifts and no sites
+        // CRITICAL VALIDATION: Record with no shifts and no sites
         // Only recover if there is REAL POSITIVE OT (not zero-valued fields)
         if (!hasMorning && !hasEvening) {
           const siteOtHoursKeys = record.siteOtHours ? Object.keys(record.siteOtHours) : [];
@@ -294,12 +235,11 @@ export function buildAttendanceEntries(
               || siteOtHoursKeys[0];
             const otHours = Number(record.siteOtHours![primarySite]) || 0;
 
-            // Double-check before creating entry
             if (otHours > 0) {
               const key = `${record.workerId}:${record.date}:${primarySite}`;
               if (!seen.has(key)) {
                 seen.add(key);
-                // Record exists with REAL OT but no shift marking = count as 0.5 day (emergency/partial work)
+                // Record exists with REAL OT but no shift marking = count as 0.5 day
                 entries.push({
                   workerId: record.workerId,
                   role,
@@ -309,35 +249,23 @@ export function buildAttendanceEntries(
                   otHours,
                   dayFraction: 0.5, // Emergency/partial work
                 });
-                if (typeof window !== 'undefined') {
-                  console.log(`✅ [PAYABLE] Labor ${emp.displayName} on ${record.date}: Recovered from OT-only record at ${primarySite} (${otHours}h OT)`);
-                }
+                log.debug('Recovered OT-only record', {
+                  worker: emp.displayName,
+                  date: record.date,
+                  site: primarySite,
+                  otHours,
+                });
               }
-            } else if (typeof window !== 'undefined') {
-              // Log rejection of zero-OT records
-              console.debug(`⛔ [REJECTED] Labor ${emp.displayName} on ${record.date}: Empty/absent record (no sites, 0 OT) - NOT payable`);
             }
-          } else if (typeof window !== 'undefined') {
-            // Log rejection of records with no positive OT
-            console.debug(`⛔ [REJECTED] Labor ${emp.displayName} on ${record.date}: No valid attendance or OT marked (hasMorning=${hasMorning}, hasEvening=${hasEvening}, positiveOT=${hasPositiveSiteOt})`);
           }
-        }
-      }
-
-      // Fallback for general OT (legacy format)
-      const genOt = record.otHours || 0;
-      if (genOt > 0 && !record.siteOtHours) {
-        const otSite = record.eveningSite || record.morningSite;
-        if (otSite) {
-          // Don't create another entry - OT is already included in the shift entries above
         }
       }
     }
   }
 
-  // Log duplicates to console for debugging
-  if (duplicatesFound.length > 0 && typeof window !== 'undefined') {
-    console.warn('⚠️ Duplicate attendance entries prevented:', duplicatesFound);
+  // Log duplicates for debugging
+  if (duplicatesFound.length > 0) {
+    log.warn('Duplicate attendance entries prevented', { count: duplicatesFound.length, duplicates: duplicatesFound });
   }
 
   return entries;
@@ -352,12 +280,7 @@ export function buildEmployeeSummaries(
   siteNameMap: Map<string, string>,
   advancesByEmployee: Map<string, any[]>
 ): EmployeePayrollSummary[] {
-  if (typeof window !== 'undefined') {
-    console.log(`📊 [BUILD SUMMARIES] Advances map ready: size=${advancesByEmployee.size}`);
-    if (advancesByEmployee.size === 0) {
-      console.log('   ⚠️ No advances in map - they may not have been fetched');
-    }
-  }
+  log.debug('Building employee summaries', { advancesMapSize: advancesByEmployee.size });
 
   const workerSiteData = new Map<
     string,
@@ -368,22 +291,8 @@ export function buildEmployeeSummaries(
     }
   >();
 
-  // Debug tracking for Premakirthi
-  const premakirthiEntries: any[] = [];
-
-  // Aggregate entries by worker and site (NO deduplication here - happens at record level)
+  // Aggregate entries by worker and site
   for (const entry of entries) {
-    // Track Premakirthi entries
-    if (entry.siteId === 'rTFoxclBsJcrzmti49qF') {
-      premakirthiEntries.push({
-        workerId: entry.workerId,
-        workerName: employeeMap.get(entry.workerId)?.displayName,
-        date: entry.date,
-        dayFraction: entry.dayFraction,
-        otHours: entry.otHours
-      });
-    }
-
     const worker = employeeMap.get(entry.workerId);
     if (!worker) continue;
 
@@ -407,33 +316,6 @@ export function buildEmployeeSummaries(
 
     // Add OT hours (safe to accumulate since entries are already deduplicated)
     wData.sites[entry.siteId].otHours += entry.otHours;
-  }
-
-  // Log Premakirthi entries for debugging
-  if (premakirthiEntries.length > 0 && typeof window !== 'undefined') {
-    console.log('🔍 [DEBUG] Premakirthi entries being processed:', premakirthiEntries);
-
-    // Group by worker to show total days
-    const byWorker: Record<string, number> = {};
-    premakirthiEntries.forEach(e => {
-      byWorker[e.workerName] = (byWorker[e.workerName] || 0) + e.dayFraction;
-    });
-    console.log('🔍 [DEBUG] Premakirthi total days per worker:', byWorker);
-
-    // Check what was actually counted
-    for (const [workerId, wData] of workerSiteData.entries()) {
-      const premaSite = wData.sites['rTFoxclBsJcrzmti49qF'];
-      if (premaSite) {
-        console.log(`🔍 [DEBUG] ${wData.worker.displayName} Premakirthi days in summary:`, premaSite.daysWorked);
-      }
-    }
-
-    // DETAILED: For Nishantha, show ALL records in Firestore that have morning/evening at Premakirthi
-    console.log('🔍 [DEBUG] ===== DETAILED NISHANTHA PREMAKIRTHI ANALYSIS =====');
-    const nishanthaPremaEntries = premakirthiEntries.filter(e => e.workerName?.includes('Nishantha'));
-    console.log(`🔍 [DEBUG] Nishantha entries WITH Premakirthi (from Firestore):`, nishanthaPremaEntries);
-    console.log(`🔍 [DEBUG] Total entries for Nishantha at Premakirthi: ${nishanthaPremaEntries.reduce((sum, e) => sum + e.dayFraction, 0)} days`);
-    console.log('🔍 [DEBUG] ===== END ANALYSIS =====');
   }
 
   // Build summaries
@@ -462,14 +344,10 @@ export function buildEmployeeSummaries(
       || advancesByEmployee.get(emp.workerId)
       || [];
 
-    if (typeof window !== 'undefined' && empAdvances.length > 0) {
-      console.log(`   ✓ ${emp.displayName}: found ${empAdvances.length} advance(s) = ${empAdvances.reduce((sum, a) => sum + a.amount, 0)} LKR`);
-    }
-
     summaries.push({
       employeeId: emp.uid,
       employeeName: emp.displayName || emp.email,
-      employeeRole: emp.role,
+      employeeRole: emp.role || 'helper',
       daysWorked: siteBreakdowns.reduce((s, b) => s + b.daysWorked, 0),
       otHours: siteBreakdowns.reduce((s, b) => s + b.otHours, 0),
       grossPay: siteBreakdowns.reduce((s, b) => s + b.totalPay, 0),
@@ -518,7 +396,7 @@ export function buildSiteTotals(
   // Convert to final array with correct workerCount
   return Array.from(totalsMap.values()).map(({ aggregate, workerIds }) => ({
     ...aggregate,
-    workerCount: workerIds.size, // Unique worker count, not cumulative
+    workerCount: workerIds.size,
   })).sort((a, b) => b.totalPayroll - a.totalPayroll);
 }
 
@@ -527,7 +405,8 @@ export function buildSiteTotals(
  */
 export function buildGrandTotals(
   employeeSummaries: EmployeePayrollSummary[],
-  selectedAdvanceDeductions: number
+  selectedAdvanceDeductions: number,
+  selectedLoanDeductions: number = 0
 ): PayrollGrandTotals {
   const totalWorkers = employeeSummaries.length;
   const totalDays = employeeSummaries.reduce((s, e) => s + e.daysWorked, 0);
@@ -540,7 +419,8 @@ export function buildGrandTotals(
     totalOtHours,
     grossPayroll,
     advanceDeductions: selectedAdvanceDeductions,
-    finalPayroll: grossPayroll - selectedAdvanceDeductions,
+    loanDeductions: selectedLoanDeductions,
+    finalPayroll: grossPayroll - selectedAdvanceDeductions - selectedLoanDeductions,
   };
 }
 
@@ -554,13 +434,6 @@ export function buildGrandTotals(
  */
 function mergeDuplicateAttendanceRecords(records: SimpleAttendance[]): SimpleAttendance[] {
   const mergedMap = new Map<string, SimpleAttendance>();
-
-  // Debug: count Premakirthi records before merge
-  const premaCountBefore = records.filter(r =>
-    r.siteVisits?.some(v => v.siteId === 'rTFoxclBsJcrzmti49qF') ||
-    r.morningSite === 'rTFoxclBsJcrzmti49qF' ||
-    r.eveningSite === 'rTFoxclBsJcrzmti49qF'
-  ).length;
 
   for (const record of records) {
     const key = `${record.workerId}:${record.date}`;
@@ -588,7 +461,6 @@ function mergeDuplicateAttendanceRecords(records: SimpleAttendance[]): SimpleAtt
       if (record.siteOtHours) {
         const merged = { ...(existing.siteOtHours || {}) };
         for (const [siteId, otHours] of Object.entries(record.siteOtHours)) {
-          // Don't sum - take the latest value (from the incoming record)
           merged[siteId] = Number(otHours) || 0;
         }
         existing.siteOtHours = merged;
@@ -619,15 +491,12 @@ function mergeDuplicateAttendanceRecords(records: SimpleAttendance[]): SimpleAtt
 
   const merged = Array.from(mergedMap.values());
 
-  // Debug: count Premakirthi records after merge
-  const premaCountAfter = merged.filter(r =>
-    r.siteVisits?.some(v => v.siteId === 'rTFoxclBsJcrzmti49qF') ||
-    r.morningSite === 'rTFoxclBsJcrzmti49qF' ||
-    r.eveningSite === 'rTFoxclBsJcrzmti49qF'
-  ).length;
-
-  if ((premaCountBefore > 0 || premaCountAfter > 0) && typeof window !== 'undefined') {
-    console.log(`🔍 [DEBUG] Premakirthi records: ${premaCountBefore} before merge → ${premaCountAfter} after merge`);
+  if (records.length !== merged.length) {
+    log.debug('Merged duplicate attendance records', {
+      before: records.length,
+      after: merged.length,
+      deduped: records.length - merged.length,
+    });
   }
 
   return merged;

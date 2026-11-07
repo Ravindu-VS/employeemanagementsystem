@@ -195,10 +195,8 @@ export async function createAdvanceRequest(
       : new Date(),
     status: 'pending',
     deductThisWeek: true,
-    deductionWeek: null,
     isDeducted: false,
     carryForward: false,
-    deducted: false,
   };
 
   return createDocument<AdvanceRequest>(COLLECTIONS.ADVANCES, advanceData as any);
@@ -328,7 +326,6 @@ export async function markAdvanceDeducted(
     deductedWeek: weekStartDate,
     carryForward: false,
     advanceState: 'fully_deducted',
-    deducted: true,
   });
 }
 
@@ -358,7 +355,7 @@ export async function getAdvanceStats(): Promise<{
   const advances = await getDocuments<AdvanceRequest>(COLLECTIONS.ADVANCES);
 
   const pending = advances.filter(a => a.status === 'pending');
-  const approved = advances.filter(a => a.status === 'approved' && !a.deducted);
+  const approved = advances.filter(a => a.status === 'approved' && !a.isDeducted);
   const rejected = advances.filter(a => a.status === 'rejected');
 
   return {

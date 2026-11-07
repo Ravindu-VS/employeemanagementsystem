@@ -43,123 +43,9 @@ import type {
   PaginationParams,
   UserProfile,
   DateRange,
+  UserRole,
 } from '@/types';
 
-// =====================================================
-// PAYROLL CALCULATION HELPERS
-// =====================================================
-
-/**
- * Calculate payroll breakdown for a single site
- */
-export function calculateSiteBreakdown(siteId: string, siteName: string, daysWorked: number, otHours: number, dailyRate: number) {
-  const otRate = calculateOtRate(dailyRate);
-  const basePay = daysWorked * dailyRate;
-  const otPay = otHours * otRate;
-  return { siteId, siteName, daysWorked, otHours, basePay, otRate, otPay, totalPay: basePay + otPay };
-}
-
-/**
- * Aggregate a worker's payroll across all sites
- */
-export function aggregateWorkerPayroll(workerId: string, workerName: string, dailyRate: number, siteBreakdowns: any[], advance: number, loan: number, other: number) {
-  let totalDaysWorked = 0, totalOtHours = 0, totalBasePay = 0, totalOtPay = 0, grossPay = 0;
-  for (const b of siteBreakdowns) {
-    totalDaysWorked += b.daysWorked;
-    totalOtHours += b.otHours;
-    totalBasePay += b.basePay;
-    totalOtPay += b.otPay;
-    grossPay += b.totalPay;
-  }
-  return { workerId, workerName, totalDaysWorked, totalOtHours, totalBasePay, totalOtPay, grossPay, advanceDeduction: advance, loanDeduction: loan, otherDeduction: other, finalPay: Math.max(0, grossPay - advance - loan - other) };
-}
-
-// =====================================================
-// TYPES
-// =====================================================
-
-export type SitePayrollSummary = {
-  siteId: string;
-  siteName: string;
-  totalWorkers: number;
-  totalDaysWorked: number;
-  totalOtHours: number;
-  totalBasePay: number;
-  totalOtPay: number;
-  totalGrossPay: number;
-};
-
-export type PayrollSummary = {
-  totalWorkers: number;
-  totalDaysWorked: number;
-  totalOtHours: number;
-  totalBasePay: number;
-  totalOtPay: number;
-  totalGrossSalary: number;
-  totalAdvanceDeductions: number;
-  totalLoanDeductions: number;
-  totalOtherDeductions: number;
-  finalPayrollTotal: number;
-};
-
-/**
- * Aggregate payroll data by site from worker records
- */
-export function aggregateSitePayroll(workers: any[]): SitePayrollSummary[] {
-  const siteMap = new Map<string, SitePayrollSummary>();
-
-  for (const worker of workers) {
-    const siteBreakdowns = worker.siteBreakdowns || worker.sites || [];
-    for (const site of siteBreakdowns) {
-      const siteId = site.siteId;
-      const existing = siteMap.get(siteId) || {
-        siteId,
-        siteName: site.siteName || siteId,
-        totalWorkers: 0,
-        totalDaysWorked: 0,
-        totalOtHours: 0,
-        totalBasePay: 0,
-        totalOtPay: 0,
-        totalGrossPay: 0,
-      };
-
-      existing.totalWorkers += 1;
-      existing.totalDaysWorked += site.daysWorked || 0;
-      existing.totalOtHours += site.otHours || 0;
-      existing.totalBasePay += site.basePay || 0;
-      existing.totalOtPay += site.otPay || 0;
-      existing.totalGrossPay += site.totalPay || 0;
-
-      siteMap.set(siteId, existing);
-    }
-  }
-
-  return Array.from(siteMap.values()).sort((a, b) => b.totalGrossPay - a.totalGrossPay);
-}
-
-/**
- * Calculate overall payroll summary from all workers
- */
-export function calculateOverallPayroll(workers: any[]): PayrollSummary {
-  return workers.reduce((acc, w) => {
-    acc.totalWorkers++;
-    acc.totalDaysWorked += w.totalDaysWorked || 0;
-    acc.totalOtHours += w.totalOtHours || 0;
-    acc.totalBasePay += w.totalBasePay || 0;
-    acc.totalOtPay += w.totalOtPay || 0;
-    acc.totalGrossSalary += w.grossPay || 0;
-    acc.totalAdvanceDeductions += w.advanceDeduction || 0;
-    acc.totalLoanDeductions += w.loanDeduction || 0;
-    acc.totalOtherDeductions += w.otherDeduction || 0;
-    acc.finalPayrollTotal += w.finalPay || w.grossPay || 0;
-    return acc;
-  }, {
-    totalWorkers: 0, totalDaysWorked: 0, totalOtHours: 0,
-    totalBasePay: 0, totalOtPay: 0, totalGrossSalary: 0,
-    totalAdvanceDeductions: 0, totalLoanDeductions: 0,
-    totalOtherDeductions: 0, finalPayrollTotal: 0,
-  });
-}
 
 
 /**
@@ -290,20 +176,31 @@ export async function generateEmployeePayroll(
   if (employee.payType === 'daily_based' || employee.role === 'driver') {
     // For daily_based workers (like drivers), fetch driver attendance
     const driverAttendanceList = await getDriverAttendanceForDateRange(weekStartStr, weekEndStr);
-    const workerDriverAttendance = driverAttendanceList.filter(a => a.workerId === workerId && a.present);
+    const workerDriverAttendance = driverAttendanceList.filter(a => a.workerId === workerId && (a.morningPresent || a.eveningPresent || a.present));
     
-    const daysWorked = workerDriverAttendance.length;
-    const otHours = workerDriverAttendance.reduce((sum, a) => sum + (a.otHours || 0), 0);
+    let driverDaysWorked = 0;
+    let driverOtHours = 0;
     
-    if (daysWorked > 0 || otHours > 0) {
+    workerDriverAttendance.forEach(a => {
+      const morningVal = a.morningPresent ?? a.present ?? false;
+      const eveningVal = a.eveningPresent ?? a.present ?? false;
+      if (morningVal) driverDaysWorked += 0.5;
+      if (eveningVal) driverDaysWorked += 0.5;
+      
+      const morningOtVal = a.morningOtHours ?? 0;
+      const eveningOtVal = a.eveningOtHours ?? 0;
+      driverOtHours += morningOtVal + eveningOtVal + (a.morningOtHours === undefined && a.eveningOtHours === undefined ? (a.otHours || 0) : 0);
+    });
+    
+    if (driverDaysWorked > 0 || driverOtHours > 0) {
       siteBreakdowns.push({
         siteId: 'transportation',
         siteName: 'Transportation Duties',
-        daysWorked,
-        otHours,
-        regularPay: daysWorked * dailyRate,
-        otPay: otHours * otRate,
-        totalPay: (daysWorked * dailyRate) + (otHours * otRate),
+        daysWorked: driverDaysWorked,
+        otHours: driverOtHours,
+        regularPay: driverDaysWorked * dailyRate,
+        otPay: driverOtHours * otRate,
+        totalPay: (driverDaysWorked * dailyRate) + (driverOtHours * otRate),
       });
     }
   } else {
@@ -328,9 +225,26 @@ export async function generateEmployeePayroll(
   // Aggregate totals across all sites
   const daysWorked = siteBreakdowns.reduce((s, b) => s + b.daysWorked, 0);
   const overtimeHours = siteBreakdowns.reduce((s, b) => s + b.otHours, 0);
-  const regularEarnings = siteBreakdowns.reduce((s, b) => s + b.regularPay, 0);
-  const overtimeEarnings = siteBreakdowns.reduce((s, b) => s + b.otPay, 0);
   
+  // Calculate transport allowance
+  let transportAllowance = 0;
+  if (employee.transportType && employee.transportType !== 'none' && employee.transportType !== 'company_vehicle') {
+    const tRate = employee.transportRate || 0;
+    const distance = employee.distance || 0;
+    const rateType = employee.transportRateType || 'per_day';
+    const sitesVisitedCount = siteBreakdowns.length;
+    
+    if (rateType === 'per_km') {
+      transportAllowance = distance * tRate * daysWorked;
+    } else if (rateType === 'per_day') {
+      transportAllowance = tRate * daysWorked;
+    } else if (rateType === 'per_week') {
+      transportAllowance = tRate;
+    } else if (rateType === 'per_site') {
+      transportAllowance = tRate * sitesVisitedCount;
+    }
+  }
+
   const regularHours = daysWorked * 8;
   const totalHours = regularHours + overtimeHours;
   // Get advance deductions for this week
@@ -338,9 +252,20 @@ export async function generateEmployeePayroll(
   const weekAdvances = allPendingAdvances.filter(a => selectedAdvanceIds.includes(a.id));
   const advanceDeductionAmount = weekAdvances.reduce((sum, a) => sum + a.amount, 0);
 
-
-  // TODO: Get pending loans
+  // Get active loans
+  const { getEmployeeActiveLoan } = await import('./loan-service');
+  const activeLoan = await getEmployeeActiveLoan(employeeId);
   const loanDeductions: LoanDeduction[] = [];
+  if (activeLoan) {
+    const deduction = Math.min(activeLoan.emiAmount, activeLoan.remainingAmount);
+    loanDeductions.push({
+      loanId: activeLoan.id,
+      emiNumber: activeLoan.paidEmis + 1,
+      emiAmount: deduction,
+      totalEmis: activeLoan.totalEmis,
+      remainingAmount: activeLoan.remainingAmount - deduction,
+    });
+  }
   const loanDeductionAmount = loanDeductions.reduce((sum, l) => sum + l.emiAmount, 0);
 
   const otherDeductions: OtherDeduction[] = [];
@@ -349,15 +274,29 @@ export async function generateEmployeePayroll(
   // ========================================
   // DOMAIN ENGINE: Aggregate worker payroll
   // ========================================
-  const workerPayroll = aggregateWorkerPayroll(
-    employeeId,
-    employee.displayName || employee.email,
-    dailyRate,
-    siteBreakdowns as any,
-    advanceDeductionAmount,
-    loanDeductionAmount,
-    otherDeductionAmount
-  );
+  let totalDaysWorked = 0, totalOtHours = 0, totalBasePay = 0, totalOtPay = 0, grossPay = 0;
+  for (const b of siteBreakdowns) {
+    totalDaysWorked += b.daysWorked;
+    totalOtHours += b.otHours;
+    totalBasePay += b.regularPay;
+    totalOtPay += b.otPay;
+    grossPay += b.totalPay;
+  }
+  const grossWithTransport = grossPay + transportAllowance;
+  const workerPayroll = {
+    workerId: employeeId,
+    workerName: employee.displayName || employee.email,
+    totalDaysWorked,
+    totalOtHours,
+    totalBasePay,
+    totalOtPay,
+    grossPay: grossWithTransport,
+    transportAllowance,
+    advanceDeduction: advanceDeductionAmount,
+    loanDeduction: loanDeductionAmount,
+    otherDeduction: otherDeductionAmount,
+    finalPay: Math.max(0, grossWithTransport - advanceDeductionAmount - loanDeductionAmount - otherDeductionAmount),
+  };
 
   // Map advance records for storage
   const advances: AdvanceDeduction[] = weekAdvances.map((adv: any) => ({
@@ -377,7 +316,7 @@ export async function generateEmployeePayroll(
     weekEndDate: weekEndStr,
     employeeId,
     employeeName: workerPayroll.workerName,
-    employeeRole: employee.role,
+    employeeRole: (employee.role || 'helper') as UserRole,
 
     regularHours: workerPayroll.totalDaysWorked * 8,
     overtimeHours: workerPayroll.totalOtHours,
@@ -386,6 +325,7 @@ export async function generateEmployeePayroll(
 
     regularEarnings: workerPayroll.totalBasePay,
     overtimeEarnings: workerPayroll.totalOtPay,
+    transportAllowance,
     bonuses: [],
     totalEarnings: workerPayroll.grossPay,
 
@@ -468,6 +408,19 @@ export async function updatePayrollStatus(
   
   if (status === 'paid') {
     updates.paidAt = new Date();
+    
+    // Process loan repayments
+    const payroll = await getPayroll(payrollId);
+    if (payroll && payroll.loanDeductions && payroll.loanDeductions.length > 0) {
+      const { recordLoanPayment } = await import('./loan-service');
+      for (const ld of payroll.loanDeductions) {
+        try {
+          await recordLoanPayment(ld.loanId, payrollId);
+        } catch (err) {
+          console.error(`Failed to record loan payment for loan ${ld.loanId}:`, err);
+        }
+      }
+    }
   }
   
   await updateDocument<WeeklyPayroll>(COLLECTIONS.PAYROLL, payrollId, updates);
@@ -596,64 +549,66 @@ export async function getWeeklyPayrollSummary(weekStartDate: string): Promise<{
 
 /**
  * Get site summaries for a week (for payroll page site cards)
- * Returns aggregated site totals using domain engine
+ * Returns aggregated site totals from stored payroll records
  */
-export async function getSitePayrollSummary(weekStartDate: string): Promise<SitePayrollSummary[]> {
+export async function getSitePayrollSummary(weekStartDate: string) {
   const payrolls = await getPayrollsForWeek(weekStartDate);
+  if (payrolls.length === 0) return [];
 
-  if (payrolls.length === 0) {
-    return [];
+  const siteMap = new Map<string, {
+    siteId: string; siteName: string;
+    totalWorkers: number; totalDaysWorked: number; totalOtHours: number;
+    totalBasePay: number; totalOtPay: number; totalGrossPay: number;
+  }>();
+
+  for (const p of payrolls) {
+    for (const site of (p.siteBreakdowns || [])) {
+      const existing = siteMap.get(site.siteId) || {
+        siteId: site.siteId, siteName: site.siteName,
+        totalWorkers: 0, totalDaysWorked: 0, totalOtHours: 0,
+        totalBasePay: 0, totalOtPay: 0, totalGrossPay: 0,
+      };
+      existing.totalWorkers += 1;
+      existing.totalDaysWorked += site.daysWorked || 0;
+      existing.totalOtHours += site.otHours || 0;
+      existing.totalBasePay += site.regularPay || 0;
+      existing.totalOtPay += site.otPay || 0;
+      existing.totalGrossPay += site.totalPay || 0;
+      siteMap.set(site.siteId, existing);
+    }
   }
 
-  // Create workerPayroll objects from stored payroll records
-  const workers = payrolls.map(p => ({
-    workerId: p.employeeId,
-    workerName: p.employeeName || '',
-    dailyRate: p.regularEarnings > 0 ? p.regularEarnings / (p.daysWorked || 1) : 0,
-    totalDaysWorked: p.daysWorked,
-    totalOtHours: p.overtimeHours,
-    totalBasePay: p.regularEarnings,
-    totalOtPay: p.overtimeEarnings,
-    grossPay: p.totalEarnings,
-  }));
-
-  return aggregateSitePayroll(workers as any);
+  return Array.from(siteMap.values()).sort((a, b) => b.totalGrossPay - a.totalGrossPay);
 }
 
 /**
  * Get grand payroll summary for a week (for payroll page totals section)
- * Returns overall summary using domain engine
+ * Returns overall summary from stored payroll records
  */
-export async function getGrandPayrollSummary(weekStartDate: string): Promise<PayrollSummary> {
+export async function getGrandPayrollSummary(weekStartDate: string) {
   const payrolls = await getPayrollsForWeek(weekStartDate);
 
-  if (payrolls.length === 0) {
-    return {
-      totalWorkers: 0,
-      totalDaysWorked: 0,
-      totalOtHours: 0,
-      totalBasePay: 0,
-      totalOtPay: 0,
-      totalGrossSalary: 0,
-      totalAdvanceDeductions: 0,
-      totalLoanDeductions: 0,
-      totalOtherDeductions: 0,
-      finalPayrollTotal: 0,
-    };
+  const summary = {
+    totalWorkers: 0, totalDaysWorked: 0, totalOtHours: 0,
+    totalBasePay: 0, totalOtPay: 0, totalGrossSalary: 0,
+    totalAdvanceDeductions: 0, totalLoanDeductions: 0,
+    totalOtherDeductions: 0, finalPayrollTotal: 0,
+  };
+
+  for (const p of payrolls) {
+    summary.totalWorkers++;
+    summary.totalDaysWorked += p.daysWorked || 0;
+    summary.totalOtHours += p.overtimeHours || 0;
+    summary.totalBasePay += p.regularEarnings || 0;
+    summary.totalOtPay += p.overtimeEarnings || 0;
+    summary.totalGrossSalary += p.totalEarnings || 0;
+    summary.totalAdvanceDeductions += p.advances?.reduce((s, a) => s + a.amount, 0) || 0;
+    summary.totalLoanDeductions += p.loanDeductions?.reduce((s, l) => s + l.emiAmount, 0) || 0;
+    summary.totalOtherDeductions += p.otherDeductions?.reduce((s, o) => s + o.amount, 0) || 0;
+    summary.finalPayrollTotal += p.netPay || 0;
   }
 
-  const workers = payrolls.map(p => ({
-    workerId: p.employeeId,
-    workerName: p.employeeName || '',
-    dailyRate: p.regularEarnings > 0 ? p.regularEarnings / (p.daysWorked || 1) : 0,
-    totalDaysWorked: p.daysWorked,
-    totalOtHours: p.overtimeHours,
-    totalBasePay: p.regularEarnings,
-    totalOtPay: p.overtimeEarnings,
-    grossPay: p.totalEarnings,
-  }));
-
-  return calculateOverallPayroll(workers as any);
+  return summary;
 }
 
 /**

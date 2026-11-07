@@ -38,8 +38,10 @@ import {
   formatDate,
   getWeekNumber,
   toISODateString,
+  getWeekStart,
+  getWeekEnd,
 } from '@/lib/date-utils';
-import { startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
+import { startOfMonth, endOfMonth } from 'date-fns';
 import type { UserProfile, SimpleAttendance, WorkSite } from '@/types';
 
 // Report types
@@ -93,8 +95,8 @@ export default function ReportsPage() {
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<'week' | 'month' | 'custom'>('week');
   const [customDates, setCustomDates] = useState({
-    start: toISODateString(startOfWeek(new Date(), { weekStartsOn: 1 })),
-    end: toISODateString(endOfWeek(new Date(), { weekStartsOn: 1 })),
+    start: toISODateString(getWeekStart(new Date())),
+    end: toISODateString(getWeekEnd(new Date())),
   });
   const [generatedReport, setGeneratedReport] = useState<string | null>(null);
 
@@ -103,8 +105,8 @@ export default function ReportsPage() {
     const now = new Date();
     if (dateRange === 'week') {
       return {
-        startDate: toISODateString(startOfWeek(now, { weekStartsOn: 1 })),
-        endDate: toISODateString(endOfWeek(now, { weekStartsOn: 1 })),
+        startDate: toISODateString(getWeekStart(now)),
+        endDate: toISODateString(getWeekEnd(now)),
       };
     } else if (dateRange === 'month') {
       return {
@@ -744,8 +746,9 @@ function EmployeeReport({ employees }: { employees: UserProfile[] }) {
   const roleGroups = useMemo(() => {
     const groups: Record<string, UserProfile[]> = {};
     employees.forEach(emp => {
-      if (!groups[emp.role]) groups[emp.role] = [];
-      groups[emp.role].push(emp);
+      const role = emp.role || 'helper';
+      if (!groups[role]) groups[role] = [];
+      groups[role].push(emp);
     });
     return groups;
   }, [employees]);

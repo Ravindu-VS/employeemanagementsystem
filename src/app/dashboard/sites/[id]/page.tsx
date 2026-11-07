@@ -1,7 +1,7 @@
 import SiteDetailPage from './site-detail';
 
 export function generateStaticParams() {
-  return [];
+  return [{ id: 'default' }];
 }
 
 export default function Page() {

@@ -32,8 +32,8 @@ const nextConfig = {
 
   // Environment variables
   env: {
-    NEXT_PUBLIC_APP_NAME: 'KK & SONS Architectural Services EMS',
-    NEXT_PUBLIC_APP_VERSION: '1.0.0',
+    NEXT_PUBLIC_APP_NAME: 'WorkForceX',
+    NEXT_PUBLIC_APP_VERSION: '2.0.0',
   },
 
   // Webpack configuration

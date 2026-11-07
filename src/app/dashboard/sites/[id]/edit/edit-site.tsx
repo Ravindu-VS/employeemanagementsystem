@@ -59,6 +59,8 @@ export default function EditSitePage() {
     enabled: !!siteId,
   });
 
+  const isSiteReadOnly = site?.status === 'completed';
+
   const {
     register,
     handleSubmit,
@@ -78,7 +80,7 @@ export default function EditSitePage() {
         address: site.address || '',
         clientName: site.clientName || '',
         clientContact: site.clientContact || '',
-        description: site.description || '',
+        description: (site as any).description || '',
         enableGeofence: hasGeofence,
         latitude: site.location?.latitude || 0,
         longitude: site.location?.longitude || 0,
@@ -192,6 +194,17 @@ export default function EditSitePage() {
 
   return (
     <div className="space-y-6">
+      {isSiteReadOnly && (
+        <Card className="border-yellow-500/30 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
+          <CardContent className="p-3 sm:p-4 flex items-center gap-2">
+            <span className="text-lg">⚠️</span>
+            <p className="text-sm font-medium">
+              This site is completed and is in Read-Only mode. Site properties cannot be modified.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-4">
         <Link href={ROUTES.SITES.LIST}>
@@ -228,6 +241,7 @@ export default function EditSitePage() {
                   <Input
                     id="name"
                     placeholder="Downtown Tower Project"
+                    disabled={isSiteReadOnly}
                     {...register('name')}
                     error={errors.name?.message}
                   />
@@ -248,6 +262,7 @@ export default function EditSitePage() {
                   id="address"
                   placeholder="123 Main Street, City, State"
                   icon={<MapPin className="h-4 w-4" />}
+                  disabled={isSiteReadOnly}
                   {...register('address')}
                   error={errors.address?.message}
                 />
@@ -258,7 +273,8 @@ export default function EditSitePage() {
                 <textarea
                   id="description"
                   placeholder="Additional details about the site..."
-                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  disabled={isSiteReadOnly}
+                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   {...register('description')}
                 />
               </div>
@@ -283,6 +299,7 @@ export default function EditSitePage() {
                   id="clientName"
                   placeholder="ABC Construction Ltd."
                   icon={<User className="h-4 w-4" />}
+                  disabled={isSiteReadOnly}
                   {...register('clientName')}
                 />
               </div>
@@ -293,6 +310,7 @@ export default function EditSitePage() {
                   id="clientContact"
                   placeholder="+94 77 123 4567"
                   icon={<Phone className="h-4 w-4" />}
+                  disabled={isSiteReadOnly}
                   {...register('clientContact')}
                 />
               </div>
@@ -316,8 +334,9 @@ export default function EditSitePage() {
                   type="checkbox"
                   id="enableGeofence"
                   checked={enableGeofence}
+                  disabled={isSiteReadOnly}
                   onChange={(e) => setEnableGeofence(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
                 />
                 <Label htmlFor="enableGeofence" className="cursor-pointer">
                   Enable geofence for this site
@@ -335,6 +354,7 @@ export default function EditSitePage() {
                       variant="outline" 
                       size="sm"
                       onClick={getCurrentLocation}
+                      disabled={isSiteReadOnly}
                       className="gap-2"
                     >
                       <MapPin className="h-4 w-4" />
@@ -350,6 +370,7 @@ export default function EditSitePage() {
                         type="number"
                         step="any"
                         placeholder="6.9271"
+                        disabled={isSiteReadOnly}
                         {...register('latitude', { valueAsNumber: true })}
                         error={errors.latitude?.message}
                       />
@@ -361,6 +382,7 @@ export default function EditSitePage() {
                         type="number"
                         step="any"
                         placeholder="79.8612"
+                        disabled={isSiteReadOnly}
                         {...register('longitude', { valueAsNumber: true })}
                         error={errors.longitude?.message}
                       />
@@ -371,6 +393,7 @@ export default function EditSitePage() {
                         id="radius"
                         type="number"
                         placeholder="100"
+                        disabled={isSiteReadOnly}
                         {...register('radius', { valueAsNumber: true })}
                         error={errors.radius?.message}
                       />
@@ -393,7 +416,7 @@ export default function EditSitePage() {
               Cancel
             </Button>
           </Link>
-          <Button type="submit" disabled={updateMutation.isPending} className="gap-2">
+          <Button type="submit" disabled={updateMutation.isPending || isSiteReadOnly} className="gap-2">
             {updateMutation.isPending ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />

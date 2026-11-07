@@ -27,6 +27,7 @@ interface PayrollSummaryProps {
   totalOtHours: number;
   grossPayroll: number;
   advanceDeductions: number;
+  loanDeductions?: number;
   finalPayroll: number;
   siteTotals: SiteTotal[];
   siteWorkerSummaries?: SiteWorkerSummary[]; // Optional: if provided, shows worker details under each site
@@ -38,6 +39,7 @@ export function PayrollSummary({
   totalOtHours,
   grossPayroll,
   advanceDeductions,
+  loanDeductions = 0,
   finalPayroll,
   siteTotals,
   siteWorkerSummaries,
@@ -84,7 +86,7 @@ export function PayrollSummary({
             <p className="text-xs sm:text-sm text-muted-foreground">Advance</p>
           </div>
           <div className="rounded-lg border border-border p-2 sm:p-3 text-center">
-            <p className="text-lg sm:text-xl md:text-2xl font-bold text-orange-400">{formatCurrency(0)}</p>
+            <p className="text-lg sm:text-xl md:text-2xl font-bold text-orange-400">{formatCurrency(loanDeductions)}</p>
             <p className="text-xs sm:text-sm text-muted-foreground">Loan</p>
           </div>
           <div className="rounded-lg border-2 border-green-500/30 bg-green-500/5 p-2 sm:p-3 text-center">

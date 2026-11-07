@@ -48,7 +48,7 @@ const employeeSchema = z.object({
   email: z.string().email('Please enter a valid email'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   displayName: z.string().min(2, 'Name must be at least 2 characters'),
-  role: z.enum(['owner', 'ceo', 'manager', 'supervisor', 'draughtsman', 'bass', 'helper']),
+  role: z.enum(['owner', 'ceo', 'manager', 'supervisor', 'draughtsman', 'bass', 'helper', 'driver']),
   phone: z.string().optional(),
   address: z.string().optional(),
   employeeId: z.string().optional(),
@@ -64,6 +64,12 @@ const employeeSchema = z.object({
     accountNumber: z.string().optional(),
     accountHolderName: z.string().optional(),
   }).optional(),
+  transportType: z.enum(['company_vehicle', 'bus', 'van', 'fuel_allowance', 'travel_allowance', 'none']).optional(),
+  pickupLocation: z.string().optional(),
+  dropLocation: z.string().optional(),
+  distance: z.preprocess((val) => (val === '' || val === undefined ? 0 : Number(val)), z.number().min(0).optional()),
+  transportRate: z.preprocess((val) => (val === '' || val === undefined ? 0 : Number(val)), z.number().min(0).optional()),
+  transportRateType: z.enum(['per_km', 'per_day', 'per_week', 'per_site']).optional(),
 });
 
 type EmployeeFormData = z.infer<typeof employeeSchema>;
@@ -135,6 +141,13 @@ export default function CreateEmployeePage() {
           accountNumber: data.bankDetails.accountNumber || '',
           accountHolderName: data.bankDetails.accountHolderName || '',
         } : undefined,
+        // Transport settings
+        transportType: data.transportType || 'none',
+        pickupLocation: data.pickupLocation || '',
+        dropLocation: data.dropLocation || '',
+        distance: data.distance || 0,
+        transportRate: data.transportRate || 0,
+        transportRateType: data.transportRateType || 'per_day',
         documents: [],
         metadata: { loginCount: 0 },
       } as any);
@@ -420,6 +433,92 @@ export default function CreateEmployeePage() {
                     id="emergencyRelationship"
                     placeholder="Spouse, Parent, etc."
                     {...register('emergencyContact.relationship')}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Transport Settings */}
+          <Card className="bg-card/50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MapPin className="h-5 w-5 text-primary" />
+                Transport Settings
+              </CardTitle>
+              <CardDescription>
+                Configure route and allowance settings
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="transportType">Transport Type</Label>
+                  <select
+                    id="transportType"
+                    {...register('transportType')}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    <option value="none">None</option>
+                    <option value="company_vehicle">Company Vehicle</option>
+                    <option value="bus">Bus</option>
+                    <option value="van">Van</option>
+                    <option value="fuel_allowance">Fuel Allowance</option>
+                    <option value="travel_allowance">Travel Allowance</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="transportRateType">Rate Type</Label>
+                  <select
+                    id="transportRateType"
+                    {...register('transportRateType')}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    <option value="per_day">Per Day</option>
+                    <option value="per_week">Per Week</option>
+                    <option value="per_km">Per KM</option>
+                    <option value="per_site">Per Site</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="pickupLocation">Pickup Location</Label>
+                  <Input
+                    id="pickupLocation"
+                    placeholder="Colombo 05"
+                    {...register('pickupLocation')}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="dropLocation">Drop Location</Label>
+                  <Input
+                    id="dropLocation"
+                    placeholder="KK Site A"
+                    {...register('dropLocation')}
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="distance">Distance (KM, One Way)</Label>
+                  <Input
+                    id="distance"
+                    type="number"
+                    step="0.1"
+                    placeholder="12.5"
+                    {...register('distance')}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="transportRate">Rate (LKR per unit)</Label>
+                  <Input
+                    id="transportRate"
+                    type="number"
+                    placeholder="100"
+                    {...register('transportRate')}
                   />
                 </div>
               </div>

@@ -70,6 +70,16 @@ const statusConfig: Record<SiteStatus, {
     color: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
     icon: <Clock className="h-3.5 w-3.5" />,
   },
+  inactive: {
+    label: 'Inactive',
+    color: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+    icon: <XCircle className="h-3.5 w-3.5" />,
+  },
+  archived: {
+    label: 'Archived',
+    color: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+    icon: <PauseCircle className="h-3.5 w-3.5" />,
+  },
 };
 
 export default function SitesPage() {
@@ -104,8 +114,11 @@ export default function SitesPage() {
     }
 
     // Status filter
-    if (statusFilter !== 'all' && site.status !== statusFilter) {
-      return false;
+    if (statusFilter !== 'all') {
+      if (site.status !== statusFilter) return false;
+    } else {
+      // By default (when statusFilter === 'all'), hide archived sites
+      if (site.status === 'archived') return false;
     }
 
     return true;
@@ -279,10 +292,13 @@ export default function SitesPage() {
                   className="h-9 rounded-md border border-border bg-background px-3 text-sm"
                 >
                   <option value="all">All Status</option>
+                  <option value="planning">Planning</option>
                   <option value="active">Active</option>
                   <option value="on_hold">On Hold</option>
                   <option value="completed">Completed</option>
                   <option value="cancelled">Cancelled</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="archived">Archived</option>
                 </select>
               </div>
             </div>
@@ -328,13 +344,22 @@ export default function SitesPage() {
                         </p>
                       )}
                     </div>
-                    <span className={cn(
-                      'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium',
-                      statusConfig[site.status].color
-                    )}>
-                      {statusConfig[site.status].icon}
-                      {statusConfig[site.status].label}
-                    </span>
+                    <select
+                      value={site.status}
+                      onChange={(e) => handleStatusChange(site.id, e.target.value as SiteStatus)}
+                      className={cn(
+                        'inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium bg-background border-border h-7 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer',
+                        statusConfig[site.status]?.color
+                      )}
+                    >
+                      <option value="planning" className="bg-background text-foreground">Planning</option>
+                      <option value="active" className="bg-background text-foreground">Active</option>
+                      <option value="on_hold" className="bg-background text-foreground">On Hold</option>
+                      <option value="completed" className="bg-background text-foreground">Completed</option>
+                      <option value="cancelled" className="bg-background text-foreground">Cancelled</option>
+                      <option value="inactive" className="bg-background text-foreground">Inactive</option>
+                      <option value="archived" className="bg-background text-foreground">Archived</option>
+                    </select>
                   </div>
 
                   {/* Address */}
@@ -388,30 +413,6 @@ export default function SitesPage() {
                         Delete
                       </Button>
                     </div>
-                    
-                    {/* Quick status change */}
-                    {site.status === 'active' && (
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        className="h-8 gap-1 text-yellow-400 hover:text-yellow-300"
-                        onClick={() => handleStatusChange(site.id, 'on_hold')}
-                      >
-                        <PauseCircle className="h-3.5 w-3.5" />
-                        Pause
-                      </Button>
-                    )}
-                    {site.status === 'on_hold' && (
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        className="h-8 gap-1 text-green-400 hover:text-green-300"
-                        onClick={() => handleStatusChange(site.id, 'active')}
-                      >
-                        <PlayCircle className="h-3.5 w-3.5" />
-                        Resume
-                      </Button>
-                    )}
                   </div>
                 </div>
               </CardContent>

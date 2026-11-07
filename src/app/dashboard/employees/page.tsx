@@ -48,6 +48,7 @@ const roleBadgeColors: Record<UserRole, string> = {
   draughtsman: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
   bass: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
   helper: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  driver: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
 };
 
 export default function EmployeesPage() {
@@ -103,7 +104,8 @@ export default function EmployeesPage() {
 
   // Group by role for stats
   const roleStats = employees.reduce((acc, emp) => {
-    acc[emp.role] = (acc[emp.role] || 0) + 1;
+    const role = emp.role || 'helper';
+    acc[role] = (acc[role] || 0) + 1;
     return acc;
   }, {} as Record<UserRole, number>);
 

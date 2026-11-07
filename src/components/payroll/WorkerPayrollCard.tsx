@@ -32,6 +32,8 @@ interface EmployeeWeekSummary {
   otRate: number;
   siteBreakdowns: SiteBreakdown[];
   advances: any[];
+  transportAllowance?: number;
+  loanDeductions?: any[];
 }
 
 interface WorkerPayrollCardProps {
@@ -51,6 +53,7 @@ const roleBadgeColors: Record<UserRole, string> = {
   draughtsman: 'bg-yellow-500/20 text-yellow-400',
   bass: 'bg-orange-500/20 text-orange-400',
   helper: 'bg-gray-500/20 text-gray-400',
+  driver: 'bg-teal-500/20 text-teal-400',
 };
 
 export function WorkerPayrollCard({
@@ -68,13 +71,16 @@ export function WorkerPayrollCard({
 
   // Safely handle advances - default to empty array if undefined
   const advances = summary.advances || [];
+  const loans = summary.loanDeductions || [];
 
   // Calculate advance deduction for this worker based on checkbox state
   const advanceDeduction = advances.reduce(
     (sum, adv) => sum + (deductionSelections[adv.id] ? adv.amount : 0),
     0
   );
-  const finalSalary = summary.grossPay - advanceDeduction;
+  const loanDeduction = loans.reduce((sum, l) => sum + (l.emiAmount || 0), 0);
+  const totalDeductions = advanceDeduction + loanDeduction;
+  const finalSalary = summary.grossPay - totalDeductions;
 
   // Count advances being deducted
   const advancesSelected = advances.filter(adv => deductionSelections[adv.id]).length;
@@ -82,9 +88,9 @@ export function WorkerPayrollCard({
   return (
     <div className={cn(
       'transition-colors',
-      advanceDeduction > 0
+      totalDeductions > 0
         ? 'border-l-4 border-amber-500/50 bg-amber-500/5 hover:bg-amber-500/10'
-        : advances.length > 0
+        : (advances.length > 0 || loans.length > 0)
           ? 'border-l-4 border-red-500/30 hover:bg-muted/20'
           : 'hover:bg-muted/20'
     )}>
@@ -104,7 +110,7 @@ export function WorkerPayrollCard({
             <div className="flex items-center gap-1.5 sm:gap-2 max-w-sm text-xs flex-wrap">
               <span className={cn(
                 'inline-flex shrink-0 rounded-full px-1.5 sm:px-2 py-0.5 font-medium',
-                roleBadgeColors[(summary.employeeRole as any) || 'helper']
+                roleBadgeColors[summary.employeeRole]
               )}>
                 {summary.employeeRole}
               </span>
@@ -129,6 +135,11 @@ export function WorkerPayrollCard({
                   {advances.length} Advance{advances.length > 1 ? 's' : ''}
                 </span>
               )}
+              {loans.length > 0 && (
+                <span className="inline-flex shrink-0 rounded bg-red-500/20 px-1.5 py-0.5 text-xs font-medium text-red-400">
+                  {loans.length} Loan{loans.length > 1 ? 's' : ''}
+                </span>
+              )}
             </div>
           </div>
         </button>
@@ -140,9 +151,9 @@ export function WorkerPayrollCard({
           className="flex items-center gap-2 sm:gap-3 shrink-0"
         >
           <div className="text-right">
-            {advanceDeduction > 0 && (
+            {totalDeductions > 0 && (
               <p className="text-xs font-bold text-red-500 whitespace-nowrap">
-                -{formatCurrency(advanceDeduction)}
+                -{formatCurrency(totalDeductions)}
               </p>
             )}
             <p className="text-sm sm:text-lg font-bold text-green-500 whitespace-nowrap">
@@ -213,6 +224,14 @@ export function WorkerPayrollCard({
             </div>
           </div>
 
+          {/* Transport Allowance */}
+          {summary.transportAllowance && summary.transportAllowance > 0 ? (
+            <div className="mt-3 flex items-center justify-between rounded-lg bg-teal-500/5 border border-teal-500/20 px-4 py-2">
+              <span className="text-sm font-medium text-teal-600 dark:text-teal-400">Transport Allowance</span>
+              <span className="font-bold text-teal-600 dark:text-teal-400">+{formatCurrency(summary.transportAllowance)}</span>
+            </div>
+          ) : null}
+
           {/* Gross salary */}
           <div className="mt-3 flex items-center justify-between rounded-lg bg-blue-500/5 border border-blue-500/20 px-4 py-2">
             <span className="text-sm font-medium">Gross Salary</span>
@@ -279,17 +298,44 @@ export function WorkerPayrollCard({
                 </div>
               )}
             </div>
-          ) : (
-            <p className="mt-3 text-xs text-muted-foreground italic">No pending advances</p>
+          ) : null}
+
+          {/* Loans section */}
+          {loans.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                Loan Repayments ({loans.length})
+              </p>
+              <div className="space-y-2">
+                {loans.map((loan: any, index: number) => (
+                  <div
+                    key={loan.loanId || index}
+                    className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs sm:text-sm">
+                        <AlertCircle className="h-4 w-4 text-red-400 shrink-0" />
+                        <span className="font-medium text-red-400">
+                          {formatCurrency(loan.emiAmount)} (EMI #{loan.emiNumber})
+                        </span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        Remaining: {formatCurrency(loan.remainingAmount)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
           {/* Final salary - highlighted */}
           <div className="mt-3 flex items-center justify-between rounded-lg bg-green-500/10 border-2 border-green-500/30 px-4 py-3">
             <span className="font-semibold">Final Salary</span>
             <div className="text-right">
-              {advanceDeduction > 0 && (
+              {totalDeductions > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  {formatCurrency(summary.grossPay)} - {formatCurrency(advanceDeduction)}
+                  {formatCurrency(summary.grossPay)} - {formatCurrency(totalDeductions)}
                 </p>
               )}
               <span className="text-xl font-bold text-green-500">
@@ -298,7 +344,7 @@ export function WorkerPayrollCard({
             </div>
           </div>
 
-          {advanceDeduction === 0 && summary.advances.length > 0 && (
+          {totalDeductions === 0 && summary.advances.length > 0 && (
             <p className="mt-2 text-xs text-muted-foreground italic">
               Advance will carry forward to next week
             </p>

@@ -14,17 +14,18 @@ const inter = Inter({
 // Metadata configuration
 export const metadata: Metadata = {
   title: {
-    default: "KK & SONS Architectural Services EMS - Admin",
-    template: "%s | KK & SONS Architectural Services EMS",
+    default: "WorkForceX — Admin Dashboard",
+    template: "%s | WorkForceX",
   },
   description:
-    "Construction and workforce management platform for KK & SONS Architectural Services",
+    "Enterprise Workforce Management Platform for KK & SONS Architectural Services",
   keywords: [
     "employee management",
     "attendance tracking",
     "payroll system",
     "workforce management",
     "construction management",
+    "WorkForceX",
   ],
   authors: [{ name: "KK & SONS Architectural Services" }],
   creator: "KK & SONS Architectural Services",

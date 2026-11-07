@@ -36,27 +36,41 @@ import {
 import { DATE_FORMATS, PAYROLL_CONFIG } from '@/constants';
 
 /**
- * Format a date using predefined formats
+ * Convert any date representation to a Date object representing the same nominal local time
+ * in the Colombo, Sri Lanka timezone (GMT+5:30), suitable for environment-agnostic formatting.
+ */
+export function toSriLankanDate(date: Date | string | number): Date {
+  const dateObj = typeof date === 'string' ? parseISO(date) : new Date(date);
+  if (!isValid(dateObj)) return new Date();
+  
+  try {
+    const tzString = dateObj.toLocaleString('en-US', { timeZone: 'Asia/Colombo' });
+    const parsed = new Date(tzString);
+    if (isValid(parsed)) return parsed;
+  } catch (error) {
+    console.warn('Failed to convert to Colombo timezone, using system time:', error);
+  }
+  return dateObj;
+}
+
+/**
+ * Format a date using predefined formats (Colombo timezone safe)
  */
 export function formatDate(
   date: Date | string | number,
   formatStr: keyof typeof DATE_FORMATS | string = 'DATE'
 ): string {
-  const dateObj = typeof date === 'string' ? parseISO(date) : new Date(date);
-  
-  if (!isValid(dateObj)) {
-    return 'Invalid date';
-  }
-  
+  const lkDate = toSriLankanDate(date);
   const formatString = DATE_FORMATS[formatStr as keyof typeof DATE_FORMATS] || formatStr;
-  return format(dateObj, formatString);
+  return format(lkDate, formatString);
 }
 
 /**
- * Format date as ISO string (YYYY-MM-DD)
+ * Format date as ISO string (YYYY-MM-DD) in Colombo timezone
  */
 export function toISODateString(date: Date): string {
-  return format(date, 'yyyy-MM-dd');
+  const lkDate = toSriLankanDate(date);
+  return format(lkDate, 'yyyy-MM-dd');
 }
 
 /**
@@ -83,11 +97,11 @@ export function getRelativeDate(date: Date | string): string {
 }
 
 /**
- * Check if date is today
+ * Check if date is today in Colombo
  */
 export function isToday(date: Date | string): boolean {
-  const dateObj = typeof date === 'string' ? parseISO(date) : date;
-  return isSameDay(dateObj, new Date());
+  const dateStr = typeof date === 'string' ? date : toISODateString(date);
+  return toISODateString(new Date()) === dateStr;
 }
 
 /**
@@ -107,21 +121,23 @@ export function isFuture(date: Date | string): boolean {
 }
 
 /**
- * Get the start of the current week (Monday)
+ * Get the start of the current week (Sunday) in Colombo
  */
 export function getWeekStart(date: Date = new Date()): Date {
-  return startOfWeek(date, { weekStartsOn: PAYROLL_CONFIG.WEEK_START_DAY as 0 | 1 | 2 | 3 | 4 | 5 | 6 });
+  const lkDate = toSriLankanDate(date);
+  return startOfWeek(lkDate, { weekStartsOn: PAYROLL_CONFIG.WEEK_START_DAY as 0 | 1 | 2 | 3 | 4 | 5 | 6 });
 }
 
 /**
- * Get the end of the current week (Sunday)
+ * Get the end of the current week (Saturday) in Colombo
  */
 export function getWeekEnd(date: Date = new Date()): Date {
-  return endOfWeek(date, { weekStartsOn: PAYROLL_CONFIG.WEEK_START_DAY as 0 | 1 | 2 | 3 | 4 | 5 | 6 });
+  const lkDate = toSriLankanDate(date);
+  return endOfWeek(lkDate, { weekStartsOn: PAYROLL_CONFIG.WEEK_START_DAY as 0 | 1 | 2 | 3 | 4 | 5 | 6 });
 }
 
 /**
- * Get all days in the current week
+ * Get all days in the current week (Colombo)
  */
 export function getWeekDays(date: Date = new Date()): Date[] {
   const start = getWeekStart(date);
@@ -130,7 +146,7 @@ export function getWeekDays(date: Date = new Date()): Date[] {
 }
 
 /**
- * Get week number and year
+ * Get week number and year (Colombo)
  */
 export function getWeekInfo(date: Date = new Date()): { week: number; year: number } {
   const weekStart = getWeekStart(date);
@@ -141,7 +157,7 @@ export function getWeekInfo(date: Date = new Date()): { week: number; year: numb
 }
 
 /**
- * Format week range (e.g., "Dec 23 - Dec 29, 2024")
+ * Format week range (e.g., "Dec 23 - Dec 29, 2024") in Colombo
  */
 export function formatWeekRange(date: Date = new Date()): string {
   const start = getWeekStart(date);
@@ -158,9 +174,10 @@ export function formatWeekRange(date: Date = new Date()): string {
  * Get month range
  */
 export function getMonthRange(date: Date = new Date()): { start: Date; end: Date } {
+  const lkDate = toSriLankanDate(date);
   return {
-    start: startOfMonth(date),
-    end: endOfMonth(date),
+    start: startOfMonth(lkDate),
+    end: endOfMonth(lkDate),
   };
 }
 
