@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -45,8 +45,8 @@ const siteSchema = z.object({
 type SiteFormData = z.infer<typeof siteSchema>;
 
 export default function EditSitePage() {
-  const params = useParams();
-  const siteId = params.id as string;
+  const searchParams = useSearchParams();
+  const siteId = (searchParams.get('id') ?? '');
   const router = useRouter();
   const queryClient = useQueryClient();
   const { toast } = useToast();

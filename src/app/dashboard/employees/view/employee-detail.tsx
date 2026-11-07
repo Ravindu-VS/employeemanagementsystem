@@ -7,7 +7,7 @@
  * View employee profile and related information.
  */
 
-import { useParams, useRouter } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
@@ -56,11 +56,11 @@ const roleBadgeColors: Record<UserRole, string> = {
 };
 
 export default function EmployeeDetailPage() {
-  const params = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const { toast } = useToast();
   const { isAuthorized, profile } = useRequireRole(ACCESS_MATRIX.employees);
-  const employeeId = params.id as string;
+  const employeeId = (searchParams.get('id') ?? '');
   const canManage = profile?.role === 'owner' || profile?.role === 'ceo' || profile?.role === 'manager';
 
   // Fetch employee data

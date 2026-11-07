@@ -38,16 +38,16 @@ export const ROUTES = {
   EMPLOYEES: {
     LIST: '/dashboard/employees',
     CREATE: '/dashboard/employees/create',
-    DETAIL: (id: string) => `/dashboard/employees/${id}`,
-    EDIT: (id: string) => `/dashboard/employees/${id}/edit`,
+    DETAIL: (id: string) => `/dashboard/employees/view?id=${encodeURIComponent(id)}`,
+    EDIT: (id: string) => `/dashboard/employees/edit?id=${encodeURIComponent(id)}`,
   },
   
   // Site routes
   SITES: {
     LIST: '/dashboard/sites',
     CREATE: '/dashboard/sites/create',
-    DETAIL: (id: string) => `/dashboard/sites/${id}`,
-    EDIT: (id: string) => `/dashboard/sites/${id}/edit`,
+    DETAIL: (id: string) => `/dashboard/sites/view?id=${encodeURIComponent(id)}`,
+    EDIT: (id: string) => `/dashboard/sites/edit?id=${encodeURIComponent(id)}`,
   },
   
   // Attendance routes
@@ -97,6 +97,8 @@ export const ROUTES = {
   
   // User Approvals
   USER_APPROVALS: '/dashboard/user-approvals',
+  LEAVE: '/dashboard/leave',
+  TRANSPORT: '/dashboard/transport',
 } as const;
 
 // =====================================================
@@ -109,6 +111,9 @@ export const COLLECTIONS = {
   ATTENDANCE: 'attendance', // legacy segment-based attendance (unused by payroll)
   SIMPLE_ATTENDANCE: 'simpleAttendance', // authoritative supervisor-marked attendance
   SYSTEM: 'system',
+  LEAVES: 'leaves',
+  VEHICLES: 'vehicles',
+  TRANSPORT_ROUTES: 'transportRoutes',
   PAYROLL: 'payroll',
   ADVANCES: 'advances',
   LOANS: 'loans',

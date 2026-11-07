@@ -1,6 +1,6 @@
 'use client';
 
-import { useParams, useRouter } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -27,9 +27,9 @@ import {
 } from 'lucide-react';
 
 export default function SiteDetailPage() {
-  const params = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
-  const siteId = params.id as string;
+  const siteId = (searchParams.get('id') ?? '');
 
   // Fetch site details
   const { data: site, isLoading: siteLoading } = useQuery({

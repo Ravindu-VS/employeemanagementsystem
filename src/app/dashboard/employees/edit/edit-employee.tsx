@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -75,11 +75,11 @@ const employeeSchema = z.object({
 type EmployeeFormData = z.infer<typeof employeeSchema>;
 
 export default function EditEmployeePage() {
-  const params = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const { toast } = useToast();
   const { isAuthorized, profile } = useRequireRole(ACCESS_MATRIX.employees_manage);
-  const employeeId = params.id as string;
+  const employeeId = (searchParams.get('id') ?? '');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Fetch employee data
