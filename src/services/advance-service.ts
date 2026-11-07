@@ -34,6 +34,7 @@ import { COLLECTIONS } from '@/constants';
 import { toISODateString } from '@/lib/date-utils';
 import { isAdvanceDeducted } from '@/domain/advances';
 import { auditAction } from './audit-service';
+import { notifyUsers } from './notification-service';
 import type {
   AdvanceRequest,
   RequestStatus,
@@ -248,6 +249,7 @@ export async function approveAdvance(
 
   await updateDocument<AdvanceRequest>(COLLECTIONS.ADVANCES, advanceId, updateData);
   await auditAction('approve', 'advances', advanceId, { newValue: { employeeId: advance.employeeId, amount: advance.amount, status: 'approved' } });
+  await notifyUsers([advance.employeeId], { title: 'Advance approved', message: `Your advance of LKR ${advance.amount} was approved`, type: 'advance' });
 }
 
 /**
@@ -281,6 +283,7 @@ export async function rejectAdvance(
     reviewNotes: notes,
   });
   await auditAction('reject', 'advances', advanceId, { newValue: { employeeId: advance.employeeId, amount: advance.amount, reason: notes } });
+  await notifyUsers([advance.employeeId], { title: 'Advance rejected', message: `Your advance of LKR ${advance.amount} was rejected: ${notes}`, type: 'advance' });
 }
 
 /**

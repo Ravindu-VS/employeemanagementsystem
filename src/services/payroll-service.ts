@@ -20,6 +20,7 @@ import { getAllPendingAdvances } from './advance-service';
 import { getActiveLoans } from './loan-service';
 import { getPayrollSettings } from './settings-service';
 import { createAuditLog, auditAction } from './audit-service';
+import { notifyUsers } from './notification-service';
 import { createLogger } from '@/lib/logger';
 import type { Loan, LoanPayment, PaymentMethod, PayrollStatus, UserRole, WeeklyPayroll } from '@/types';
 
@@ -247,8 +248,14 @@ export async function generateWeeklyPayroll(
         });
         return true;
       });
-      if (created) success++;
-      else skipped++;
+      if (created) {
+        success++;
+        await notifyUsers([e.employeeId], {
+          title: 'Payroll approved',
+          message: `Week ${period.start} – ${period.end}: final salary LKR ${e.finalSalary}`,
+          type: 'payroll',
+        });
+      } else skipped++;
     } catch (err) {
       errors.push(`${e.employeeName}: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -309,6 +316,7 @@ export async function markAsPaid(payrollId: string, paymentMethod: PaymentMethod
     paymentMethod,
     ...(paidBy ? { paidBy } : {}),
   } as Partial<WeeklyPayroll>);
+  await notifyUsers([payroll.employeeId], { title: 'Salary paid', message: `Week ${payroll.weekStartDate}: LKR ${payroll.netPay} paid`, type: 'payroll' });
   await auditAction('update', 'payroll', payrollId, {
     newValue: { status: 'paid', netPay: payroll.netPay, loanInstalments: (payroll.loanDeductions || []).length },
   });

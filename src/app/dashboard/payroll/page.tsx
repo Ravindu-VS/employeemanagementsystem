@@ -26,6 +26,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, cn } from '@/lib/utils';
 import { addDaysISO, formatDate, getPayrollWeek, getWeekNumber, todayISO, fromISODateString } from '@/lib/date-utils';
 import { computePayroll } from '@/domain/payroll';
+import { detectAnomalies } from '@/domain/anomalies';
 import { WorkerPayrollCard } from '@/components/payroll/WorkerPayrollCard';
 import { PayrollOverview, SiteTotalsTable, GrandTotalCard } from '@/components/payroll/PayrollSummary';
 import { RoleBadge } from '@/components/payroll/RoleBadge';
@@ -76,6 +77,8 @@ export default function PayrollPage() {
     () => (inputs ? computePayroll({ ...inputs, advanceSelections: selections }) : null),
     [inputs, selections]
   );
+
+  const anomalies = useMemo(() => (result && inputs ? detectAnomalies(result, inputs.employees) : []), [result, inputs]);
 
   const toggleDeduction = useCallback((advanceId: string) => {
     // Flip the state the engine currently shows for this advance.
@@ -217,6 +220,26 @@ export default function PayrollPage() {
             <p className="text-xs text-muted-foreground">
               Some stored records use the previous Sunday–Saturday week. Dates already paid in any stored record are excluded from this preview, so nothing is paid twice.
             </p>
+          )}
+
+          {/* ========== REVIEW FLAGS (never change pay) ========== */}
+          {anomalies.length > 0 && (
+            <Card className="border-amber-500/40 bg-amber-500/5">
+              <CardContent className="p-3 sm:p-4">
+                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+                  <AlertTriangle className="h-4 w-4" /> {anomalies.length} item{anomalies.length === 1 ? '' : 's'} to review before approving
+                </p>
+                <ul className="space-y-1 text-xs text-foreground sm:text-sm">
+                  {anomalies.slice(0, 12).map((a, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span className={cn('shrink-0 rounded px-1.5 text-xs font-medium uppercase', a.severity === 'critical' ? 'bg-red-500/15 text-red-700 dark:text-red-300' : a.severity === 'warning' ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300' : 'bg-blue-500/15 text-blue-700 dark:text-blue-300')}>{a.severity}</span>
+                      <span><strong>{a.employeeName}</strong>: {a.message}</span>
+                    </li>
+                  ))}
+                  {anomalies.length > 12 && <li className="text-muted-foreground">…and {anomalies.length - 12} more (open each employee below)</li>}
+                </ul>
+              </CardContent>
+            </Card>
           )}
 
           {/* ========== OVERALL SUMMARY (preview) ========== */}

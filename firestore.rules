@@ -148,11 +148,35 @@ service cloud.firestore {
     }
 
     // ---------- notifications ----------
+    // userId = a uid, or "role:<role>" for everyone holding that role
+    function isMyNotification(d) { return d.userId == request.auth.uid || (active() && d.userId == 'role:' + me().role); }
     match /notifications/{id} {
-      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if active();
-      allow update: if signedIn() && resource.data.userId == request.auth.uid && onlyChanges(['read', 'readAt']);
+      allow read: if signedIn() && (isMyNotification(resource.data) || isAdmin());
+      allow create: if active() && request.resource.data.isRead == false;
+      allow update: if signedIn() && isMyNotification(resource.data) && onlyChanges(['isRead', 'readAt']);
       allow delete: if isAdmin();
+    }
+
+    // ---------- leave ----------
+    match /leaves/{id} {
+      allow read: if isPayrollAdmin() || (active() && resource.data.employeeId == request.auth.uid);
+      allow create: if active() && request.resource.data.status == 'pending'
+        && (request.resource.data.employeeId == request.auth.uid || isPayrollAdmin());
+      allow update: if (isPayrollAdmin() && resource.data.status == 'pending')
+        || (active() && resource.data.employeeId == request.auth.uid
+            && resource.data.status == 'pending' && request.resource.data.status == 'cancelled'
+            && onlyChanges(['status', 'updatedAt']));
+      allow delete: if false;
+    }
+
+    // ---------- transport: vehicles & routes ----------
+    match /vehicles/{id} {
+      allow read: if active();
+      allow write: if isPayrollAdmin();
+    }
+    match /transportRoutes/{id} {
+      allow read: if active();
+      allow write: if isPayrollAdmin();
     }
 
     // everything else: denied

@@ -28,7 +28,7 @@ import { ACCESS_MATRIX } from '@/domain/roles';
 import { useRequireRole, useAuth } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
-import { getAllEmployees, updateEmployee, createAuditLog } from '@/services';
+import { getAllEmployees, updateEmployee, createAuditLog, notifyUsers } from '@/services';
 import { ROLE_OPTIONS } from '@/constants';
 import type { UserProfile, UserRole } from '@/types';
 
@@ -88,6 +88,7 @@ export default function UserApprovalsPage() {
           newValue: { role, approved: true, status: 'active' },
         });
       }
+      await notifyUsers([userId], { title: 'Account approved', message: `Your account is active with the role ${role}.`, type: 'system' });
     },
     onSuccess: () => {
       toast({ title: 'User Approved', description: 'The user can now access the system.' });

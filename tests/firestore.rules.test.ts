@@ -96,3 +96,37 @@ describe('attendance, payroll, advances', () => {
     await assertFails(updateDoc(doc(as('owner'), 'auditLogs/l1'), { action: 'x' }));
   });
 });
+
+describe('leave, notifications, transport', () => {
+  it('employees request their own leave; only admins decide; employees may cancel pending', async () => {
+    const leave = { employeeId: 'helper', type: 'annual', startDate: '2026-11-09', endDate: '2026-11-09', days: 1, status: 'pending' };
+    await assertSucceeds(setDoc(doc(as('helper'), 'leaves/l1'), leave));
+    await assertFails(setDoc(doc(as('helper'), 'leaves/l2'), { ...leave, employeeId: 'driver' }));
+    await assertFails(setDoc(doc(as('helper'), 'leaves/l3'), { ...leave, status: 'approved' }));
+    await assertFails(updateDoc(doc(as('helper'), 'leaves/l1'), { status: 'approved' }));
+    await assertFails(updateDoc(doc(as('sup'), 'leaves/l1'), { status: 'approved' }));
+    await assertSucceeds(updateDoc(doc(as('helper'), 'leaves/l1'), { status: 'cancelled' }));
+    await assertFails(getDoc(doc(as('driver'), 'leaves/l1')));
+  });
+  it('notifications: own or role-addressed only; can only mark read', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'notifications/n1'), { userId: 'helper', title: 't', isRead: false });
+      await setDoc(doc(ctx.firestore(), 'notifications/n2'), { userId: 'role:manager', title: 't', isRead: false });
+    });
+    await assertSucceeds(getDoc(doc(as('helper'), 'notifications/n1')));
+    await assertFails(getDoc(doc(as('driver'), 'notifications/n1')));
+    await assertSucceeds(getDoc(doc(as('manager'), 'notifications/n2')));
+    await assertFails(getDoc(doc(as('helper'), 'notifications/n2')));
+    await assertFails(updateDoc(doc(as('helper'), 'notifications/n1'), { title: 'x' }));
+    await assertSucceeds(updateDoc(doc(as('helper'), 'notifications/n1'), { isRead: true }));
+    await assertSucceeds(setDoc(doc(as('helper'), 'notifications/n3'), { userId: 'role:manager', title: 'Leave request', isRead: false }));
+    await assertFails(setDoc(doc(as('pending'), 'notifications/n4'), { userId: 'role:owner', title: 'x', isRead: false }));
+  });
+  it('transport: everyone active reads, only payroll admins write', async () => {
+    await assertFails(setDoc(doc(as('driver'), 'vehicles/v1'), { registrationNo: 'X' }));
+    await assertSucceeds(setDoc(doc(as('manager'), 'vehicles/v1'), { registrationNo: 'X' }));
+    await assertSucceeds(getDoc(doc(as('driver'), 'vehicles/v1')));
+    await assertFails(setDoc(doc(as('sup'), 'transportRoutes/r1'), { name: 'R' }));
+  });
+});
+

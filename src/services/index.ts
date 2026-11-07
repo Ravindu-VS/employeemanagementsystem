@@ -126,3 +126,12 @@ export {
   DEFAULT_ATTENDANCE_SETTINGS,
   DEFAULT_NOTIFICATION_SETTINGS,
 } from './settings-service';
+
+// Notifications
+export { notifyUsers, notifyRoles, getMyNotifications, markNotificationsRead } from './notification-service';
+
+// Leave
+export { getAllLeaveRequests, getEmployeeLeaveRequests, getLeaveSettings, requestLeave, decideLeave, cancelLeave } from './leave-service';
+
+// Transport (vehicles & routes)
+export { getVehicles, saveVehicle, getTransportRoutes, saveTransportRoute } from './transport-service';

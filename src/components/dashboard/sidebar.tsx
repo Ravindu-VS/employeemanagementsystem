@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { 
+  CalendarDays,
   Building2,
   LayoutDashboard,
   Users,
@@ -87,6 +88,18 @@ const navItems = [
     href: ROUTES.LOANS.LIST,
     icon: CreditCard,
     area: 'loans' as AppArea,
+  },
+  {
+    title: "Leave",
+    href: ROUTES.LEAVE,
+    icon: CalendarDays,
+    area: 'leave' as AppArea,
+  },
+  {
+    title: "Transport",
+    href: ROUTES.TRANSPORT,
+    icon: Truck,
+    area: 'transport' as AppArea,
   },
   {
     title: "Reports",

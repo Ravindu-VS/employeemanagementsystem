@@ -1,9 +1,10 @@
 "use client";
 
+import Image from 'next/image';
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Bell,
   Menu,
@@ -25,11 +26,10 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { signOut } from "@/lib/firebase/auth";
-import { ROUTES, USER_ROLES, COLLECTIONS } from "@/constants";
+import { ROUTES, USER_ROLES } from "@/constants";
 import { getGreeting, formatDate } from "@/lib/date-utils";
 import { getInitials, cn } from "@/lib/utils";
-import { db } from "@/lib/firebase/client";
-import { collection, query, orderBy, limit, getDocs, where, Timestamp } from "firebase/firestore";
+import { getMyNotifications, markNotificationsRead } from "@/services/notification-service";
 import type { UserProfile } from "@/types";
 
 /**
@@ -60,32 +60,19 @@ export function Header({ user, onMenuClick, sidebarCollapsed }: HeaderProps) {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showNotifications]);
 
-  // Fetch recent notifications from Firestore
+  // The signed-in user's own notifications (written by notification-service)
+  const queryClient = useQueryClient();
   const { data: notifications = [] } = useQuery({
     queryKey: ["header-notifications", user.uid],
-    queryFn: async () => {
-      const q = query(
-        collection(db, COLLECTIONS.NOTIFICATIONS),
-        orderBy("createdAt", "desc"),
-        limit(10)
-      );
-      const snap = await getDocs(q);
-      return snap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          title: data.title || "Notification",
-          message: data.message || "",
-          type: data.type || "info",
-          read: data.read ?? false,
-          createdAt: data.createdAt?.toDate?.() ?? new Date(),
-        };
-      });
-    },
+    queryFn: () => getMyNotifications(user.uid, 20, user.role),
     refetchInterval: 60_000,
   });
+  const markRead = useMutation({
+    mutationFn: (ids: string[]) => markNotificationsRead(ids),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["header-notifications", user.uid] }),
+  });
 
-  const unreadCount = notifications.filter((n: any) => !n.read).length;
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   // Handle logout
   const handleLogout = async () => {
@@ -167,6 +154,11 @@ export function Header({ user, onMenuClick, sidebarCollapsed }: HeaderProps) {
             <div className="absolute right-0 top-full mt-2 z-50 w-full sm:w-80 left-4 right-4 sm:left-auto sm:right-0 rounded-lg border border-border bg-popover shadow-lg">
               <div className="flex items-center justify-between border-b border-border px-4 py-3">
                 <h3 className="font-semibold text-sm">Notifications</h3>
+                {unreadCount > 0 && (
+                  <Button variant="ghost" size="sm" className="ml-auto mr-1 h-7 text-xs" onClick={() => markRead.mutate(notifications.filter((n) => !n.isRead).map((n) => n.id))}>
+                    Mark all read
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -182,18 +174,23 @@ export function Header({ user, onMenuClick, sidebarCollapsed }: HeaderProps) {
                     <p className="text-sm">No notifications yet</p>
                   </div>
                 ) : (
-                  notifications.map((notif: any) => (
-                    <div
+                  notifications.map((notif) => (
+                    <button
+                      type="button"
                       key={notif.id}
+                      onClick={() => {
+                        if (!notif.isRead) markRead.mutate([notif.id]);
+                        if (notif.actionUrl) { setShowNotifications(false); router.push(notif.actionUrl); }
+                      }}
                       className={cn(
-                        "flex gap-3 border-b border-border/50 px-4 py-3 transition-colors hover:bg-muted/50",
-                        !notif.read && "bg-primary/5"
+                        "flex w-full gap-3 border-b border-border/50 px-4 py-3 text-left transition-colors hover:bg-muted/50",
+                        !notif.isRead && "bg-primary/5"
                       )}
                     >
                       <div className="mt-0.5">
-                        {notif.type === "success" ? (
+                        {notif.type === "payroll" || notif.type === "advance" ? (
                           <CheckCircle2 className="h-4 w-4 text-green-500" />
-                        ) : notif.type === "warning" || notif.type === "alert" ? (
+                        ) : notif.type === "alert" ? (
                           <AlertCircle className="h-4 w-4 text-yellow-500" />
                         ) : (
                           <Info className="h-4 w-4 text-blue-500" />
@@ -204,10 +201,10 @@ export function Header({ user, onMenuClick, sidebarCollapsed }: HeaderProps) {
                         <p className="text-xs text-muted-foreground truncate">{notif.message}</p>
                         <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
                           <Clock className="h-3 w-3" />
-                          {formatDate(notif.createdAt, 'DATE_TIME')}
+                          {formatDate(notif.createdAt, 'DATETIME')}
                         </div>
                       </div>
-                    </div>
+                    </button>
                   ))
                 )}
               </div>
@@ -225,9 +222,12 @@ export function Header({ user, onMenuClick, sidebarCollapsed }: HeaderProps) {
               {/* Avatar */}
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
                 {user.photoURL ? (
-                  <img
+                  <Image
                     src={user.photoURL}
                     alt={user.displayName || 'User'}
+                    width={32}
+                    height={32}
+                    unoptimized
                     className="h-8 w-8 rounded-full object-cover"
                   />
                 ) : (
