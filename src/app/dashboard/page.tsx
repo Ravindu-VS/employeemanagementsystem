@@ -34,8 +34,8 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { ROUTES, USER_ROLES } from "@/constants";
 import { cn } from "@/lib/utils";
-import { formatDate, toISODateString } from "@/lib/date-utils";
-import { subDays, format } from "date-fns";
+import { formatDate, todayISO, addDaysISO } from "@/lib/date-utils";
+import { normalizeAttendance } from "@/domain/attendance";
 import {
   getAllEmployees,
   getAllSites,
@@ -188,8 +188,9 @@ const quickActions: QuickActionProps[] = [
 export default function DashboardPage() {
   const { profile } = useAuth();
 
-  const todayStr = new Date().toISOString().split("T")[0];
-  const sevenDaysAgo = toISODateString(subDays(new Date(), 6));
+  // Calendar dates in Asia/Colombo (never UTC)
+  const todayStr = todayISO();
+  const sevenDaysAgo = addDaysISO(todayStr, -6);
 
   const { data: employees = [] } = useQuery({
     queryKey: ["employees"],
@@ -225,7 +226,11 @@ export default function DashboardPage() {
   const activeEmployees = employees.filter((e) => e.isActive !== false).length;
   const totalSites = sites.length;
   const activeSites = sites.filter((s) => s.status === "active").length;
-  const todayPresent = todayAttendance.filter((a) => a.morningSite || a.eveningSite).length;
+  // Distinct employees with any shift today (site or driver), normalized
+  const todayPresent = React.useMemo(
+    () => new Set(normalizeAttendance(todayAttendance, { start: todayStr, end: todayStr }).shifts.map((s) => s.workerId)).size,
+    [todayAttendance, todayStr]
+  );
   const todayAbsent = activeEmployees - todayPresent;
   const pendingAdvanceCount = pendingAdvances.length;
   const pendingLoanCount = pendingLoans.length;
@@ -233,20 +238,19 @@ export default function DashboardPage() {
   // Prepare attendance chart data (last 7 days)
   const attendanceChartData = React.useMemo(() => {
     const days: { date: string; label: string; present: number; absent: number }[] = [];
+    const { shifts } = normalizeAttendance(weekAttendance, { start: sevenDaysAgo, end: todayStr });
     for (let i = 6; i >= 0; i--) {
-      const date = subDays(new Date(), i);
-      const dateStr = toISODateString(date);
-      const dayRecords = weekAttendance.filter(a => a.date === dateStr);
-      const present = dayRecords.filter(a => a.morningSite || a.eveningSite).length;
+      const dateStr = addDaysISO(todayStr, -i);
+      const present = new Set(shifts.filter((s) => s.date === dateStr).map((s) => s.workerId)).size;
       days.push({
         date: dateStr,
-        label: format(date, 'EEE'),
+        label: formatDate(dateStr, 'EEE'),
         present,
         absent: Math.max(0, activeEmployees - present),
       });
     }
     return days;
-  }, [weekAttendance, activeEmployees]);
+  }, [weekAttendance, activeEmployees, sevenDaysAgo, todayStr]);
 
   // Prepare role distribution data for pie chart
   const roleChartData = React.useMemo(() => {

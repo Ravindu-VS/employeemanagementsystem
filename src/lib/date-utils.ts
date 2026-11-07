@@ -35,22 +35,58 @@ import {
 } from 'date-fns';
 import { DATE_FORMATS, PAYROLL_CONFIG } from '@/constants';
 
+// =====================================================
+// TIMEZONE STRATEGY (single source of truth)
+// =====================================================
+// All business dates (attendance date, payroll week, advance date) are
+// *calendar dates in Asia/Colombo*, stored as 'yyyy-MM-dd' strings.
+//
+// - A real instant (new Date(), Firestore Timestamp) is converted to its
+//   Colombo calendar date with Intl (independent of the browser timezone).
+// - A calendar date that must be represented as a Date object is anchored at
+//   12:00 Colombo time, so it maps back to the same calendar day in every
+//   timezone on Earth (UTC-12 … UTC+14).
+// - Week arithmetic is done on calendar strings with UTC maths only.
+export const BUSINESS_TIMEZONE = 'Asia/Colombo';
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const colomboDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: BUSINESS_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/** True when the string is a plain calendar date (yyyy-MM-dd). */
+export function isISODateString(value: unknown): value is string {
+  return typeof value === 'string' && ISO_DATE_RE.test(value);
+}
+
 /**
- * Convert any date representation to a Date object representing the same nominal local time
- * in the Colombo, Sri Lanka timezone (GMT+5:30), suitable for environment-agnostic formatting.
+ * Represent a Colombo calendar date as a Date anchored at 12:00 Colombo time.
+ */
+export function fromISODateString(dateStr: string): Date {
+  return new Date(`${dateStr}T12:00:00+05:30`);
+}
+
+/**
+ * Convert any date representation to a Date whose *local* fields equal the
+ * Colombo wall-clock time — used only for display formatting with date-fns.
  */
 export function toSriLankanDate(date: Date | string | number): Date {
-  const dateObj = typeof date === 'string' ? parseISO(date) : new Date(date);
-  if (!isValid(dateObj)) return new Date();
-  
-  try {
-    const tzString = dateObj.toLocaleString('en-US', { timeZone: 'Asia/Colombo' });
-    const parsed = new Date(tzString);
-    if (isValid(parsed)) return parsed;
-  } catch (error) {
-    console.warn('Failed to convert to Colombo timezone, using system time:', error);
-  }
-  return dateObj;
+  const dateObj = isISODateString(date)
+    ? fromISODateString(date)
+    : typeof date === 'string'
+      ? parseISO(date)
+      : new Date(date);
+  if (!isValid(dateObj)) return new Date(NaN);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: BUSINESS_TIMEZONE,
+    year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', second: 'numeric', hourCycle: 'h23',
+  }).formatToParts(dateObj);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  return new Date(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
 }
 
 /**
@@ -61,23 +97,64 @@ export function formatDate(
   formatStr: keyof typeof DATE_FORMATS | string = 'DATE'
 ): string {
   const lkDate = toSriLankanDate(date);
+  if (!isValid(lkDate)) return '—';
   const formatString = DATE_FORMATS[formatStr as keyof typeof DATE_FORMATS] || formatStr;
   return format(lkDate, formatString);
 }
 
 /**
- * Format date as ISO string (YYYY-MM-DD) in Colombo timezone
+ * Colombo calendar date (yyyy-MM-dd) of an instant. Calendar-date strings are
+ * returned unchanged.
  */
-export function toISODateString(date: Date): string {
-  const lkDate = toSriLankanDate(date);
-  return format(lkDate, 'yyyy-MM-dd');
+export function toISODateString(date: Date | string | number): string {
+  if (isISODateString(date)) return date;
+  const dateObj = typeof date === 'string' ? parseISO(date) : new Date(date);
+  if (!isValid(dateObj)) return '';
+  return colomboDateFormatter.format(dateObj); // en-CA → yyyy-MM-dd
+}
+
+/** Today's calendar date in Colombo. */
+export function todayISO(): string {
+  return toISODateString(new Date());
+}
+
+/** Add (or subtract) whole days to a calendar date string. */
+export function addDaysISO(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const t = Date.UTC(y, m - 1, d) + days * 86_400_000;
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+/** Day of week of a calendar date: 0 = Sunday … 6 = Saturday. */
+export function dayOfWeekISO(dateStr: string): number {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+/** Inclusive list of calendar dates from start to end. */
+export function eachDateISO(startStr: string, endStr: string): string[] {
+  const out: string[] = [];
+  for (let d = startStr; d <= endStr; d = addDaysISO(d, 1)) out.push(d);
+  return out;
 }
 
 /**
- * Parse ISO date string to Date
+ * The payroll week containing a date.
+ * Week = Monday → Sunday. Monday–Saturday are normal working days; Sunday is
+ * normally a holiday but emergency Sunday attendance (if any was actually
+ * marked) belongs to the same week as the preceding Monday–Saturday.
  */
+export function getPayrollWeek(date: Date | string = new Date()): { start: string; end: string } {
+  const dateStr = toISODateString(date);
+  const weekStartDay = PAYROLL_CONFIG.WEEK_START_DAY; // 1 = Monday
+  const offset = (dayOfWeekISO(dateStr) - weekStartDay + 7) % 7;
+  const start = addDaysISO(dateStr, -offset);
+  return { start, end: addDaysISO(start, 6) };
+}
+
+/** Parse ISO date string (calendar dates are anchored at Colombo noon). */
 export function parseDate(dateString: string): Date {
-  return parseISO(dateString);
+  return isISODateString(dateString) ? fromISODateString(dateString) : parseISO(dateString);
 }
 
 /**
@@ -100,8 +177,7 @@ export function getRelativeDate(date: Date | string): string {
  * Check if date is today in Colombo
  */
 export function isToday(date: Date | string): boolean {
-  const dateStr = typeof date === 'string' ? date : toISODateString(date);
-  return toISODateString(new Date()) === dateStr;
+  return toISODateString(date) === todayISO();
 }
 
 /**
@@ -121,38 +197,36 @@ export function isFuture(date: Date | string): boolean {
 }
 
 /**
- * Get the start of the current week (Sunday) in Colombo
+ * Start (Monday) of the payroll week, anchored at Colombo noon.
  */
-export function getWeekStart(date: Date = new Date()): Date {
-  const lkDate = toSriLankanDate(date);
-  return startOfWeek(lkDate, { weekStartsOn: PAYROLL_CONFIG.WEEK_START_DAY as 0 | 1 | 2 | 3 | 4 | 5 | 6 });
+export function getWeekStart(date: Date | string = new Date()): Date {
+  return fromISODateString(getPayrollWeek(date).start);
 }
 
 /**
- * Get the end of the current week (Saturday) in Colombo
+ * End (Sunday) of the payroll week, anchored at Colombo noon.
+ * Compare calendar strings (toISODateString) rather than instants.
  */
-export function getWeekEnd(date: Date = new Date()): Date {
-  const lkDate = toSriLankanDate(date);
-  return endOfWeek(lkDate, { weekStartsOn: PAYROLL_CONFIG.WEEK_START_DAY as 0 | 1 | 2 | 3 | 4 | 5 | 6 });
+export function getWeekEnd(date: Date | string = new Date()): Date {
+  return fromISODateString(getPayrollWeek(date).end);
 }
 
 /**
- * Get all days in the current week (Colombo)
+ * Get all days in the payroll week (Colombo)
  */
 export function getWeekDays(date: Date = new Date()): Date[] {
-  const start = getWeekStart(date);
-  const end = getWeekEnd(date);
-  return eachDayOfInterval({ start, end });
+  const { start, end } = getPayrollWeek(date);
+  return eachDateISO(start, end).map(fromISODateString);
 }
 
 /**
  * Get week number and year (Colombo)
  */
 export function getWeekInfo(date: Date = new Date()): { week: number; year: number } {
-  const weekStart = getWeekStart(date);
+  const lk = toSriLankanDate(getWeekStart(date));
   return {
-    week: parseInt(format(weekStart, 'w')),
-    year: parseInt(format(weekStart, 'yyyy')),
+    week: parseInt(format(lk, 'I')), // ISO week number (Monday-based)
+    year: parseInt(format(lk, 'R')),
   };
 }
 
@@ -160,8 +234,8 @@ export function getWeekInfo(date: Date = new Date()): { week: number; year: numb
  * Format week range (e.g., "Dec 23 - Dec 29, 2024") in Colombo
  */
 export function formatWeekRange(date: Date = new Date()): string {
-  const start = getWeekStart(date);
-  const end = getWeekEnd(date);
+  const start = toSriLankanDate(getWeekStart(date));
+  const end = toSriLankanDate(getWeekEnd(date));
   
   if (start.getMonth() === end.getMonth()) {
     return `${format(start, 'MMM d')} - ${format(end, 'd, yyyy')}`;
@@ -238,23 +312,21 @@ export const subTime = {
  * Format time only (HH:mm)
  */
 export function formatTime(date: Date | string): string {
-  const dateObj = typeof date === 'string' ? parseISO(date) : date;
-  return format(dateObj, 'HH:mm');
+  return formatDate(date, 'HH:mm');
 }
 
 /**
  * Format time with AM/PM
  */
 export function formatTime12h(date: Date | string): string {
-  const dateObj = typeof date === 'string' ? parseISO(date) : date;
-  return format(dateObj, 'hh:mm a');
+  return formatDate(date, 'hh:mm a');
 }
 
 /**
  * Get greeting based on time of day
  */
 export function getGreeting(): string {
-  const hour = new Date().getHours();
+  const hour = toSriLankanDate(new Date()).getHours();
   
   if (hour < 12) return 'Good morning';
   if (hour < 17) return 'Good afternoon';
@@ -317,7 +389,5 @@ export function getWeekNumber(date: Date = new Date()): number {
  * Format date and time together
  */
 export function formatDateTime(date: Date | string): string {
-  const dateObj = typeof date === 'string' ? parseISO(date) : date;
-  if (!isValid(dateObj)) return 'Invalid date';
-  return format(dateObj, 'dd/MM/yyyy HH:mm');
+  return formatDate(date, 'dd/MM/yyyy HH:mm');
 }

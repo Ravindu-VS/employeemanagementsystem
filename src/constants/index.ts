@@ -106,7 +106,9 @@ export const ROUTES = {
 export const COLLECTIONS = {
   USERS: 'users',
   SITES: 'sites',
-  ATTENDANCE: 'attendance',
+  ATTENDANCE: 'attendance', // legacy segment-based attendance (unused by payroll)
+  SIMPLE_ATTENDANCE: 'simpleAttendance', // authoritative supervisor-marked attendance
+  SYSTEM: 'system',
   PAYROLL: 'payroll',
   ADVANCES: 'advances',
   LOANS: 'loans',
@@ -212,7 +214,17 @@ export const ATTENDANCE_CONFIG = {
 
 export const PAYROLL_CONFIG = {
   // Week configuration
-  WEEK_START_DAY: 0, // Monday = 1, Sunday = 0 (CHANGED: Sunday = 0 to include emergency Sunday work)
+  // Payroll week = Monday → Sunday. Mon–Sat are normal working days; Sunday is a
+  // holiday but emergency Sunday attendance (when actually marked) is paid in
+  // the same week. Legacy payroll records created with a Sunday→Saturday week
+  // keep their stored weekStartDate (see payroll-service: legacy week lookup).
+  WEEK_START_DAY: 1,
+  // Supervisor pay rule: fixed amount per distinct site visited per day.
+  // Default only — configurable in Settings → Payroll (supervisorSiteVisitRate)
+  // and overridable per employee (siteVisitRate).
+  DEFAULT_SUPERVISOR_SITE_VISIT_RATE: 2000,
+  // OT hourly rate = daily salary ÷ this divisor (business rule).
+  OT_DAILY_DIVISOR: 8,
   
   // Overtime rates
   OVERTIME_MULTIPLIER: 1.5,
