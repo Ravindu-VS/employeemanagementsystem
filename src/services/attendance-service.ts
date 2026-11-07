@@ -2,1058 +2,341 @@
  * =====================================================
  * ATTENDANCE SERVICE
  * =====================================================
- * Data operations for attendance management.
+ * Firestore access for supervisor-marked attendance (`simpleAttendance`).
+ *
+ * Persistence model — deterministic, collision-safe document ids:
+ *   `${workerId}_${date}`         site attendance of one worker on one day
+ *   `${workerId}_${date}_driver`  driver shifts of one driver on one day
+ * Per-site data lives under its own map key (siteShifts[siteId],
+ * siteOtHours[siteId]), so saving one site never resets another site.
+ *
+ * Saving runs in ONE Firestore transaction per screen (all workers at once):
+ * read current docs → apply only this site's changes → write. Legacy
+ * random-id documents for the same worker/day are folded into the
+ * deterministic document and flagged `superseded` (never deleted).
+ * After commit the caller refetches from the server and the result is
+ * verified (see verifySiteAttendance).
  */
 
-import {
-  getDocument,
-  getDocuments,
-  getPaginatedDocuments,
-  createDocument,
-  updateDocument,
-  query,
-  where,
-  orderBy,
-  generateDocId,
-  serverTimestamp,
-} from '@/lib/firebase/firestore';
-import { writeBatch, doc, collection, deleteField } from 'firebase/firestore';
+import { getDocuments, where } from '@/lib/firebase/firestore';
+import { doc, runTransaction, serverTimestamp, documentId, query, collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import { uploadAttendancePhoto } from '@/lib/firebase/storage';
-import { COLLECTIONS, ATTENDANCE_CONFIG } from '@/constants';
-import { toISODateString, getDurationInMinutes } from '@/lib/date-utils';
-import type { 
-  DailyAttendance, 
-  AttendanceSegment, 
-  AttendanceStatus,
-  SegmentStatus,
-  GeoPoint,
-  SimpleAttendance,
-  BulkAttendanceEntry,
-  PaginatedResponse, 
-  PaginationParams,
-  AttendanceFilters,
-  DateRange,
-  UserRole,
-} from '@/types';
+import { COLLECTIONS } from '@/constants';
+import {
+  driverAttendanceDocId,
+  effectiveWorkerDay,
+  isDriverRecord,
+  normalizeAttendance,
+  siteAttendanceDocId,
+  type SiteShiftState,
+} from '@/domain/attendance';
+import { isHigherRoleMultiSite } from '@/domain/roles';
+import { createLogger } from '@/lib/logger';
+import { auditAction } from './audit-service';
+import type { BulkAttendanceEntry, DateRange, SimpleAttendance } from '@/types';
+import { toISODateString } from '@/lib/date-utils';
 
-/**
- * Get attendance record by ID
- */
-export async function getAttendance(attendanceId: string): Promise<DailyAttendance | null> {
-  return getDocument<DailyAttendance>(COLLECTIONS.ATTENDANCE, attendanceId);
+const log = createLogger('AttendanceService');
+const COL = COLLECTIONS.SIMPLE_ATTENDANCE;
+const MAX_TX_WRITES = 450; // Firestore limit is 500 writes per transaction
+
+// =====================================================
+// READS
+// =====================================================
+
+/** All attendance documents (site + driver) for one date. */
+export async function getSimpleAttendance(date: string): Promise<SimpleAttendance[]> {
+  return getDocuments<SimpleAttendance>(COL, [where('date', '==', date)]);
+}
+
+/** All attendance documents for an inclusive date range. */
+export async function getSimpleAttendanceForDateRange(startDate: string, endDate: string): Promise<SimpleAttendance[]> {
+  return getDocuments<SimpleAttendance>(COL, [where('date', '>=', startDate), where('date', '<=', endDate)]);
+}
+
+/** Driver attendance documents for one date. */
+export async function getDriverAttendance(date: string): Promise<SimpleAttendance[]> {
+  const all = await getSimpleAttendance(date);
+  return all.filter((r) => isDriverRecord(r) && !r.superseded);
 }
 
 /**
- * Get attendance for a specific employee on a specific date
- */
-export async function getEmployeeAttendanceByDate(
-  employeeId: string,
-  date: Date | string
-): Promise<DailyAttendance | null> {
-  const dateStr = typeof date === 'string' ? date : toISODateString(date);
-  
-  const records = await getDocuments<DailyAttendance>(COLLECTIONS.ATTENDANCE, [
-    where('employeeId', '==', employeeId),
-    where('date', '==', dateStr),
-  ]);
-  
-  return records.length > 0 ? records[0] : null;
-}
-
-/**
- * Get attendance records for a date range
- */
-export async function getAttendanceByDateRange(
-  dateRange: DateRange,
-  employeeId?: string
-): Promise<DailyAttendance[]> {
-  const startDate = toISODateString(dateRange.start);
-  const endDate = toISODateString(dateRange.end);
-  
-  const constraints = [
-    where('date', '>=', startDate),
-    where('date', '<=', endDate),
-  ];
-  
-  if (employeeId) {
-    constraints.push(where('employeeId', '==', employeeId));
-  }
-  
-  const results = await getDocuments<DailyAttendance>(COLLECTIONS.ATTENDANCE, constraints);
-  return results.sort((a, b) => b.date.localeCompare(a.date));
-}
-
-/**
- * Get today's attendance for all employees
- */
-export async function getTodayAttendance(): Promise<DailyAttendance[]> {
-  const today = toISODateString(new Date());
-  
-  const results = await getDocuments<DailyAttendance>(COLLECTIONS.ATTENDANCE, [
-    where('date', '==', today),
-  ]);
-  return results.sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
-}
-
-/**
- * Get attendance with pagination
- */
-export async function getAttendancePaginated(
-  params: PaginationParams,
-  filters?: AttendanceFilters
-): Promise<PaginatedResponse<DailyAttendance>> {
-  const constraints = [];
-
-  if (filters?.employeeId) {
-    constraints.push(where('employeeId', '==', filters.employeeId));
-  }
-  
-  if (filters?.dateRange) {
-    constraints.push(where('date', '>=', toISODateString(filters.dateRange.start)));
-    constraints.push(where('date', '<=', toISODateString(filters.dateRange.end)));
-  }
-  
-  if (filters?.status) {
-    constraints.push(where('status', '==', filters.status));
-  }
-
-  return getPaginatedDocuments<DailyAttendance>(
-    COLLECTIONS.ATTENDANCE,
-    params,
-    constraints
-  );
-}
-
-/**
- * Create or get attendance record for an employee on a date
- */
-export async function getOrCreateAttendance(
-  employeeId: string,
-  employeeName: string,
-  date: Date = new Date()
-): Promise<DailyAttendance> {
-  const dateStr = toISODateString(date);
-  
-  // Check if record exists
-  let attendance = await getEmployeeAttendanceByDate(employeeId, dateStr);
-  
-  if (!attendance) {
-    // Create new attendance record
-    const newAttendance: Omit<DailyAttendance, 'id' | 'createdAt' | 'updatedAt'> = {
-      date: dateStr,
-      employeeId,
-      employeeName,
-      segments: [],
-      totalHours: 0,
-      totalOvertimeHours: 0,
-      status: 'absent',
-      isSynced: true,
-    };
-    
-    const id = await createDocument<DailyAttendance>(COLLECTIONS.ATTENDANCE, newAttendance as any);
-    
-    attendance = {
-      id,
-      ...newAttendance,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-  }
-  
-  return attendance;
-}
-
-/**
- * Start a new attendance segment
- */
-export async function startAttendanceSegment(
-  attendanceId: string,
-  segmentData: {
-    siteId: string;
-    siteName: string;
-    location: GeoPoint;
-    markedBy: string;
-    markedByName: string;
-    photoFile?: File | Blob;
-    notes?: string;
-  }
-): Promise<AttendanceSegment> {
-  // Get current attendance
-  const attendance = await getAttendance(attendanceId);
-  
-  if (!attendance) {
-    throw new Error('Attendance record not found');
-  }
-  
-  // Check for active segments
-  const activeSegment = attendance.segments.find(s => s.status === 'active');
-  
-  if (activeSegment) {
-    throw new Error('There is already an active segment. Please end it first.');
-  }
-  
-  // Generate segment ID
-  const segmentId = generateDocId(COLLECTIONS.ATTENDANCE);
-  
-  // Upload photo if provided
-  let startPhotoUrl: string | undefined;
-  if (segmentData.photoFile) {
-    startPhotoUrl = await uploadAttendancePhoto(
-      segmentData.photoFile,
-      attendance.employeeId,
-      segmentId,
-      'start'
-    );
-  }
-  
-  // Create new segment
-  const newSegment: AttendanceSegment = {
-    id: segmentId,
-    siteId: segmentData.siteId,
-    siteName: segmentData.siteName,
-    startTime: new Date(),
-    startLocation: segmentData.location,
-    startPhotoUrl,
-    isValidLocation: true, // TODO: Validate against geofence
-    markedBy: segmentData.markedBy,
-    markedByName: segmentData.markedByName,
-    breakDuration: 0,
-    notes: segmentData.notes,
-    status: 'active',
-  };
-  
-  // Update attendance record
-  const segments = [...attendance.segments, newSegment];
-  
-  await updateDocument<DailyAttendance>(COLLECTIONS.ATTENDANCE, attendanceId, {
-    segments,
-    status: 'present',
-  });
-  
-  return newSegment;
-}
-
-/**
- * End an attendance segment
- */
-export async function endAttendanceSegment(
-  attendanceId: string,
-  segmentId: string,
-  endData: {
-    location: GeoPoint;
-    photoFile?: File | Blob;
-    breakDuration?: number;
-    notes?: string;
-  }
-): Promise<AttendanceSegment> {
-  // Get current attendance
-  const attendance = await getAttendance(attendanceId);
-  
-  if (!attendance) {
-    throw new Error('Attendance record not found');
-  }
-  
-  // Find the segment
-  const segmentIndex = attendance.segments.findIndex(s => s.id === segmentId);
-  
-  if (segmentIndex === -1) {
-    throw new Error('Segment not found');
-  }
-  
-  const segment = attendance.segments[segmentIndex];
-  
-  if (segment.status !== 'active') {
-    throw new Error('Segment is not active');
-  }
-  
-  // Upload photo if provided
-  let endPhotoUrl: string | undefined;
-  if (endData.photoFile) {
-    endPhotoUrl = await uploadAttendancePhoto(
-      endData.photoFile,
-      attendance.employeeId,
-      segmentId,
-      'end'
-    );
-  }
-  
-  // Calculate duration
-  const endTime = new Date();
-  const duration = getDurationInMinutes(segment.startTime, endTime);
-  const breakDuration = endData.breakDuration || 0;
-  const workDuration = duration - breakDuration;
-  
-  // Update segment
-  const updatedSegment: AttendanceSegment = {
-    ...segment,
-    endTime,
-    endLocation: endData.location,
-    endPhotoUrl,
-    duration: workDuration,
-    breakDuration,
-    notes: endData.notes || segment.notes,
-    status: 'completed',
-  };
-  
-  // Update segments array
-  const segments = [...attendance.segments];
-  segments[segmentIndex] = updatedSegment;
-  
-  // Calculate total hours
-  const { totalHours, overtimeHours, status } = calculateAttendanceTotals(segments);
-  
-  await updateDocument<DailyAttendance>(COLLECTIONS.ATTENDANCE, attendanceId, {
-    segments,
-    totalHours,
-    totalOvertimeHours: overtimeHours,
-    status,
-  });
-  
-  return updatedSegment;
-}
-
-/**
- * Calculate attendance totals from segments
- */
-function calculateAttendanceTotals(segments: AttendanceSegment[]): {
-  totalHours: number;
-  overtimeHours: number;
-  status: AttendanceStatus;
-} {
-  const completedSegments = segments.filter(s => s.status === 'completed' || s.status === 'auto_closed');
-  
-  const totalMinutes = completedSegments.reduce((sum, s) => sum + (s.duration || 0), 0);
-  const totalHours = totalMinutes / 60;
-  
-  const standardHours = ATTENDANCE_CONFIG.STANDARD_WORK_HOURS;
-  const overtimeHours = Math.max(0, totalHours - standardHours);
-  
-  // Determine status
-  let status: AttendanceStatus = 'absent';
-  
-  if (totalHours >= standardHours) {
-    status = 'present';
-  } else if (totalHours >= ATTENDANCE_CONFIG.HALF_DAY_THRESHOLD_HOURS) {
-    status = 'half_day';
-  } else if (totalHours > 0) {
-    status = 'present'; // Partial attendance
-  }
-  
-  return {
-    totalHours: Math.round(totalHours * 100) / 100,
-    overtimeHours: Math.round(overtimeHours * 100) / 100,
-    status,
-  };
-}
-
-/**
- * Mark attendance as absent
- */
-export async function markAbsent(
-  employeeId: string,
-  employeeName: string,
-  date: Date = new Date(),
-  reason?: string
-): Promise<void> {
-  const attendance = await getOrCreateAttendance(employeeId, employeeName, date);
-  
-  await updateDocument<DailyAttendance>(COLLECTIONS.ATTENDANCE, attendance.id, {
-    status: 'absent',
-    notes: reason,
-    segments: [],
-    totalHours: 0,
-    totalOvertimeHours: 0,
-  });
-}
-
-/**
- * Mark attendance as on leave
- */
-export async function markOnLeave(
-  employeeId: string,
-  employeeName: string,
-  date: Date = new Date(),
-  leaveType?: string
-): Promise<void> {
-  const attendance = await getOrCreateAttendance(employeeId, employeeName, date);
-  
-  await updateDocument<DailyAttendance>(COLLECTIONS.ATTENDANCE, attendance.id, {
-    status: 'on_leave',
-    notes: leaveType,
-    segments: [],
-    totalHours: 0,
-    totalOvertimeHours: 0,
-  });
-}
-
-/**
- * Get attendance summary for an employee
+ * Attendance summary for one employee (employee detail page).
+ * Uses the same normalization as payroll.
  */
 export async function getEmployeeAttendanceSummary(
-  employeeId: string,
+  employee: { uid: string; workerId?: string },
   dateRange: DateRange
-): Promise<{
-  totalDays: number;
-  presentDays: number;
-  absentDays: number;
-  halfDays: number;
-  leaveDays: number;
-  totalHours: number;
-  overtimeHours: number;
-}> {
-  const records = await getAttendanceByDateRange(dateRange, employeeId);
-  
+): Promise<{ totalDays: number; presentDays: number; halfDays: number; overtimeHours: number; siteVisits: number }> {
+  const ids = Array.from(new Set([employee.uid, employee.workerId].filter(Boolean))) as string[];
+  if (ids.length === 0) return { totalDays: 0, presentDays: 0, halfDays: 0, overtimeHours: 0, siteVisits: 0 };
+  const start = toISODateString(dateRange.start);
+  const end = toISODateString(dateRange.end);
+  const records = await getDocuments<SimpleAttendance>(COL, [where('workerId', 'in', ids)]);
+  const { shifts, ot } = normalizeAttendance(records, { start, end });
+  const perDay = new Map<string, number>();
+  const visits = new Set<string>();
+  for (const s of shifts) {
+    perDay.set(s.date, Math.min(1, (perDay.get(s.date) || 0) + (s.shift === 'visit' ? 1 : 0.5)));
+    if (s.siteId) visits.add(`${s.date}|${s.siteId}`);
+  }
+  const fractions = Array.from(perDay.values());
   return {
-    totalDays: records.length,
-    presentDays: records.filter(r => r.status === 'present').length,
-    absentDays: records.filter(r => r.status === 'absent').length,
-    halfDays: records.filter(r => r.status === 'half_day').length,
-    leaveDays: records.filter(r => r.status === 'on_leave').length,
-    totalHours: records.reduce((sum, r) => sum + r.totalHours, 0),
-    overtimeHours: records.reduce((sum, r) => sum + r.totalOvertimeHours, 0),
+    totalDays: fractions.reduce((a, b) => a + b, 0),
+    presentDays: fractions.filter((f) => f >= 1).length,
+    halfDays: fractions.filter((f) => f > 0 && f < 1).length,
+    overtimeHours: ot.reduce((a, o) => a + o.hours, 0),
+    siteVisits: visits.size,
   };
 }
 
-/**
- * Auto-close orphaned active segments
- * Should be run periodically (e.g., end of day)
- */
-export async function autoCloseOrphanedSegments(): Promise<number> {
-  const today = toISODateString(new Date());
-  
-  // Get today's attendance records with active segments
-  const records = await getDocuments<DailyAttendance>(COLLECTIONS.ATTENDANCE, [
-    where('date', '==', today),
-  ]);
-  
-  let closedCount = 0;
-  
-  for (const record of records) {
-    const activeSegments = record.segments.filter(s => s.status === 'active');
-    
-    if (activeSegments.length > 0) {
-      const now = new Date();
-      
-      const updatedSegments = record.segments.map(segment => {
-        if (segment.status === 'active') {
-          // Check if segment has been active too long
-          const duration = getDurationInMinutes(segment.startTime, now);
-          
-          if (duration > ATTENDANCE_CONFIG.AUTO_CLOSE_AFTER_HOURS * 60) {
-            closedCount++;
-            return {
-              ...segment,
-              endTime: now,
-              duration,
-              status: 'auto_closed' as SegmentStatus,
-              notes: (segment.notes || '') + ' [Auto-closed by system]',
-            };
-          }
-        }
-        return segment;
-      });
-      
-      if (closedCount > 0) {
-        const { totalHours, overtimeHours, status } = calculateAttendanceTotals(updatedSegments);
-        
-        await updateDocument<DailyAttendance>(COLLECTIONS.ATTENDANCE, record.id, {
-          segments: updatedSegments,
-          totalHours,
-          totalOvertimeHours: overtimeHours,
-          status,
-        });
-      }
-    }
-  }
-  
-  return closedCount;
-}
-
 // =====================================================
-// SIMPLIFIED ATTENDANCE (Supervisor Marking)
+// SITE ATTENDANCE SAVE
 // =====================================================
-// Matches the construction-site paper sheet workflow.
 
-const SIMPLE_ATTENDANCE_COLLECTION = 'simpleAttendance';
-
-/**
- * Get simple attendance records for a date and optional site
- */
-export async function getSimpleAttendance(
-  date: string,
-  siteId?: string
-): Promise<SimpleAttendance[]> {
-  const constraints = [where('date', '==', date)];
-
-  const records = await getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, constraints);
-
-  if (siteId) {
-    return records.filter(r => r.morningSite === siteId || r.eveningSite === siteId);
-  }
-
-  return records;
+export interface SaveResult {
+  success: number;
+  failed: number;
+  written: number;
+  supersededLegacy: number;
+  errors: string[];
 }
 
 /**
- * Get simple attendance for a specific worker on a date.
- * Returns ALL records for multi-site roles (supervisor/manager/ceo/owner).
- */
-export async function getWorkerSimpleAttendance(
-  workerId: string,
-  date: string
-): Promise<SimpleAttendance | null> {
-  if (!workerId || !date) return null;
-
-  const records = await getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
-    where('workerId', '==', workerId),
-    where('date', '==', date),
-  ]);
-  return records.length > 0 ? records[0] : null;
-}
-
-/**
- * Get ALL simple attendance records for a worker on a date.
- * Used for multi-site roles (supervisor, manager, ceo, owner) who
- * can visit multiple sites on the same day.
- */
-export async function getWorkerAllSimpleAttendance(
-  workerId: string,
-  date: string
-): Promise<SimpleAttendance[]> {
-  if (!workerId || !date) return [];
-
-  return getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
-    where('workerId', '==', workerId),
-    where('date', '==', date),
-  ]);
-}
-
-/**
- * Mark simple attendance for a single worker
- */
-export async function markSimpleAttendance(
-  data: {
-    date: string;
-    workerId: string;
-    workerName: string;
-    morningSite: string | null;
-    eveningSite: string | null;
-    otHours: number;
-    supervisorId: string;
-    attendanceType?: 'site' | 'driver';
-    role?: UserRole;
-    notes?: string;
-  }
-): Promise<string> {
-  const isMultiSite = data.role && ['owner', 'ceo', 'manager', 'supervisor'].includes(data.role);
-  let existing: SimpleAttendance | null = null;
-  
-  if (isMultiSite) {
-    const allRecords = await getWorkerAllSimpleAttendance(data.workerId, data.date);
-    const targetSiteId = data.morningSite || data.eveningSite;
-    existing = allRecords.find(r => r.morningSite === targetSiteId || r.eveningSite === targetSiteId) || null;
-  } else {
-    existing = await getWorkerSimpleAttendance(data.workerId, data.date);
-  }
-
-  const updatePayload: Record<string, any> = {
-    morningSite: data.morningSite,
-    eveningSite: data.eveningSite,
-    otHours: data.otHours,
-    supervisorId: data.supervisorId,
-    attendanceType: data.attendanceType || 'site',
-  };
-  if (data.role !== undefined) updatePayload.role = data.role;
-  if (data.notes !== undefined) updatePayload.notes = data.notes;
-
-  if (existing) {
-    await updateDocument<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, existing.id, updatePayload);
-    return existing.id;
-  }
-
-  return createDocument<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, {
-    date: data.date,
-    workerId: data.workerId,
-    workerName: data.workerName,
-    ...updatePayload,
-  } as any);
-}
-
-/**
- * Bulk mark attendance for multiple workers (supervisor workflow).
- * Uses Firestore writeBatch for performance — single round-trip.
- * Only writes changed records to minimise Firestore operations.
- *
- * Role-aware:
- * - Supervisor: merges site visits (preserves other sites)
- * - Labor: updates morning/evening shifts
+ * Save attendance for ONE site for many workers in a single transaction.
+ * Only `siteShifts[siteId]` / `siteOtHours[siteId]` of each worker change.
  */
 export async function bulkMarkSimpleAttendance(
   date: string,
   siteId: string,
   entries: BulkAttendanceEntry[],
-  supervisorId: string,
-  workerRoles?: Record<string, string> // REQUIRED: current role from employees
-): Promise<{ success: number; failed: number }> {
-  // 1. Pre-fetch ALL existing records for this date in one query
-  const existingRecords = await getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
-    where('date', '==', date),
-  ]);
-  
-  // Create a map of workerId -> array of records
-  const recordsByWorker = new Map<string, SimpleAttendance[]>();
-  for (const r of existingRecords) {
-    const list = recordsByWorker.get(r.workerId) || [];
+  actorUid: string
+): Promise<SaveResult> {
+  if (!date || !siteId) throw new Error('Date and site are required');
+
+  // Legacy documents (random ids) can only be found by query; new legacy
+  // documents are never created any more, so reading them up front is safe.
+  const dayDocs = await getSimpleAttendance(date);
+  const legacyByWorker = new Map<string, SimpleAttendance[]>();
+  for (const r of dayDocs) {
+    if (isDriverRecord(r) || r.superseded) continue;
+    if (r.id === siteAttendanceDocId(r.workerId, date)) continue;
+    const list = legacyByWorker.get(r.workerId) || [];
     list.push(r);
-    recordsByWorker.set(r.workerId, list);
+    legacyByWorker.set(r.workerId, list);
   }
 
-  // 2. Build batch — only include changed records
-  const batch = writeBatch(db);
-  let success = 0;
-  let failed = 0;
+  const result: SaveResult = { success: 0, failed: 0, written: 0, supersededLegacy: 0, errors: [] };
+  const chunkSize = Math.floor(MAX_TX_WRITES / 4);
 
-  for (const entry of entries) {
-    try {
-      const isMultiSite = ['owner', 'ceo', 'manager', 'supervisor'].includes(entry.role || 'helper');
-      const workerRecords = recordsByWorker.get(entry.workerId) || [];
-      
-      let existing: SimpleAttendance | undefined;
-      
-      if (isMultiSite) {
-        // Find record for this specific site for supervisors
-        existing = workerRecords.find(r => 
-          r.morningSite === siteId || r.eveningSite === siteId
-        );
-        
-        // If multi-site and no record for this site yet, and they are absent here, skip creating empty record
-        if (!existing && !entry.morning && !entry.evening && entry.otHours === 0) {
-          success++;
-          continue;
+  for (let i = 0; i < entries.length; i += chunkSize) {
+    const chunk = entries.slice(i, i + chunkSize);
+    // The callback may be retried by Firestore: keep per-attempt counters.
+    const chunkResult = await runTransaction(db, async (tx) => {
+      const r: SaveResult = { success: 0, failed: 0, written: 0, supersededLegacy: 0, errors: [] };
+      const refs = chunk.map((e) => doc(db, COL, siteAttendanceDocId(e.workerId, date)));
+      const snaps = await Promise.all(refs.map((ref) => tx.get(ref)));
+
+      chunk.forEach((entry, idx) => {
+        const ref = refs[idx];
+        const snap = snaps[idx];
+        const current = snap.exists() ? ({ id: snap.id, ...snap.data() } as SimpleAttendance) : null;
+        const legacy = legacyByWorker.get(entry.workerId) || [];
+
+        // Effective state across the deterministic doc + any legacy docs.
+        const before = effectiveWorkerDay([...(current ? [current] : []), ...legacy], entry.workerId, date);
+        const sites: Record<string, SiteShiftState> = { ...before.sites };
+        const ot: Record<string, number> = { ...before.ot };
+
+        // Apply ONLY this site's change.
+        const morning = !!entry.morning;
+        const evening = !!entry.evening;
+        const otHours = Math.max(0, Number(entry.otHours) || 0);
+        if (morning || evening) sites[siteId] = { morning, evening };
+        else delete sites[siteId];
+        if (otHours > 0) ot[siteId] = otHours;
+        else delete ot[siteId];
+
+        if (!isHigherRoleMultiSite(entry.role)) {
+          // Labor: a shift can belong to only one site per day.
+          const clash = Object.entries(sites).find(
+            ([sid, st]) => sid !== siteId && ((morning && st.morning) || (evening && st.evening))
+          );
+          if (clash) {
+            r.failed++;
+            r.errors.push(`${entry.workerName}: shift already marked at another site on ${date}`);
+            return;
+          }
         }
-      } else {
-        // Regular worker: use their one and only record
-        existing = workerRecords[0];
-      }
 
-      // =====================================================
-      // CRITICAL FIX: Explicit absence clearing
-      // When unchecking a shift at current site, MUST set to null (not preserve old value)
-      // =====================================================
-
-      let updateMorningSite: string | null;
-      let updateEveningSite: string | null;
-
-      if (entry.morning) {
-        // Marking morning at this site
-        updateMorningSite = siteId;
-      } else {
-        // Unchecking morning - check if it was marked at THIS site
-        updateMorningSite = (!entry.morning && existing?.morningSite === siteId) ? null : (existing?.morningSite || null);
-      }
-
-      if (entry.evening) {
-        // Marking evening at this site
-        updateEveningSite = siteId;
-      } else {
-        // Unchecking evening - check if it was marked at THIS site
-        updateEveningSite = (!entry.evening && existing?.eveningSite === siteId) ? null : (existing?.eveningSite || null);
-      }
-
-      // Build siteOtHours mapping - track OT per site
-      let siteOtHours = { ...(existing?.siteOtHours || {}) };
-
-      if (entry.otHours > 0) {
-        // Update OT for this site
-        siteOtHours[siteId] = entry.otHours;
-      } else if (entry.otHours === 0) {
-        // Only clear OT for this site if we're clearing both morning AND evening at this site
-        if (updateMorningSite === null && updateEveningSite === null && (existing?.morningSite === siteId || existing?.eveningSite === siteId)) {
-          delete siteOtHours[siteId];
+        const isEmpty = Object.keys(sites).length === 0 && Object.keys(ot).length === 0;
+        if (!current && legacy.length === 0 && isEmpty) {
+          r.success++; // absent and nothing stored — nothing to write
+          return;
         }
-      }
+        const stored = current ? effectiveWorkerDay([current], entry.workerId, date) : null;
+        const unchanged =
+          stored &&
+          legacy.length === 0 &&
+          JSON.stringify(sortKeys(sites)) === JSON.stringify(sortKeys(stored.sites)) &&
+          JSON.stringify(sortKeys(ot)) === JSON.stringify(sortKeys(stored.ot)) &&
+          !!(current as SimpleAttendance & { siteShifts?: unknown }).siteShifts;
+        if (unchanged) {
+          r.success++;
+          return;
+        }
 
-      // Calculate total otHours from all sites
-      const otHours = Object.values(siteOtHours).reduce((sum, h) => sum + (Number(h) || 0), 0);
+        // Legacy-compatible convenience fields (first site per shift).
+        const morningSite = Object.entries(sites).find(([, st]) => st.morning)?.[0] ?? null;
+        const eveningSite = Object.entries(sites).find(([, st]) => st.evening)?.[0] ?? null;
+        const totalOt = Object.values(ot).reduce((a, b) => a + b, 0);
 
-      // =====================================================
-      // FIXED: Skip detection must use the CORRECTED site values
-      // =====================================================
-
-      // Skip if nothing changed
-      if (
-        existing &&
-        existing.morningSite === updateMorningSite &&
-        existing.eveningSite === updateEveningSite &&
-        existing.otHours === otHours &&
-        JSON.stringify(existing.siteOtHours) === JSON.stringify(siteOtHours)
-      ) {
-        success++;
-        continue;
-      }
-
-      if (existing) {
-        // Update existing doc
-        const docRef = doc(db, SIMPLE_ATTENDANCE_COLLECTION, existing.id);
-
-        const updateData: any = {
-          // Use deleteField() to actually remove fields from Firestore on unmark
-          morningSite: updateMorningSite === null ? deleteField() : updateMorningSite,
-          eveningSite: updateEveningSite === null ? deleteField() : updateEveningSite,
-          siteOtHours: Object.keys(siteOtHours).length > 0 ? siteOtHours : deleteField(),
-          otHours,
-          supervisorId,
-          attendanceType: 'site',
-          updatedAt: serverTimestamp(),
-        };
-
-        console.debug('[ATTENDANCE SAVE - UPDATE]', {
-          workerId: entry.workerId,
-          date,
-          siteId,
-          before: {
-            morningSite: existing.morningSite,
-            eveningSite: existing.eveningSite,
-            otHours: existing.otHours,
-          },
-          after: {
-            morningSite: updateMorningSite,
-            eveningSite: updateEveningSite,
-            otHours,
-          },
-          action: (updateMorningSite === null || updateEveningSite === null) ? 'clear-absence' : 'update-presence',
-        });
-
-        batch.update(docRef, updateData);
-      } else {
-        // Create new doc
-        const newDocRef = doc(collection(db, SIMPLE_ATTENDANCE_COLLECTION));
-        const newData: any = {
+        tx.set(ref, {
           date,
           workerId: entry.workerId,
           workerName: entry.workerName,
-          role: workerRoles?.[entry.workerId] || 'helper',
-          otHours,
-          supervisorId,
+          role: entry.role || 'helper',
           attendanceType: 'site',
-          createdAt: serverTimestamp(),
+          siteShifts: sites,
+          siteOtHours: ot,
+          otHours: totalOt,
+          morningSite,
+          eveningSite,
+          siteVisits: [],
+          supervisorId: actorUid,
+          updatedBy: actorUid,
           updatedAt: serverTimestamp(),
-        };
-
-        // Only include site fields if they have values (avoid undefined in Firestore)
-        if (updateMorningSite) {
-          newData.morningSite = updateMorningSite;
-        }
-        if (updateEveningSite) {
-          newData.eveningSite = updateEveningSite;
-        }
-        if (Object.keys(siteOtHours).length > 0) {
-          newData.siteOtHours = siteOtHours;
-        }
-
-        batch.set(newDocRef, newData);
-
-        console.debug('[ATTENDANCE SAVE - CREATE]', {
-          workerId: entry.workerId,
-          date,
-          siteId,
-          morning: updateMorningSite,
-          evening: updateEveningSite,
-          otHours,
+          createdAt: current?.createdAt ?? serverTimestamp(),
+          createdBy: current?.createdBy ?? actorUid,
         });
-      }
-      success++;
-    } catch (err) {
-      console.error('[ATTENDANCE SAVE ERROR]', {
-        workerId: entry.workerId,
-        message: err instanceof Error ? err.message : String(err),
-        error: err,
+        r.written++;
+
+        for (const old of legacy) {
+          tx.update(doc(db, COL, old.id), { superseded: true, supersededBy: ref.id, supersededAt: serverTimestamp(), updatedBy: actorUid });
+          r.supersededLegacy++;
+        }
+        r.success++;
       });
-      failed++;
-    }
+      return r;
+    });
+
+    result.success += chunkResult.success;
+    result.failed += chunkResult.failed;
+    result.written += chunkResult.written;
+    result.supersededLegacy += chunkResult.supersededLegacy;
+    result.errors.push(...chunkResult.errors);
   }
 
-  // 3. Single atomic commit
-  if (success > 0) {
-    await batch.commit();
+  log.info('Site attendance saved', { date, siteId, ...result });
+  if (result.written > 0) {
+    await auditAction('update', 'attendance', `${date}_${siteId}`, {
+      newValue: { date, siteId, workersWritten: result.written, legacyFolded: result.supersededLegacy, failed: result.failed },
+    });
   }
+  return result;
+}
 
-  return { success, failed };
+function sortKeys<T extends Record<string, unknown>>(o: T): T {
+  return Object.keys(o).sort().reduce((acc, k) => ({ ...acc, [k]: o[k] }), {} as T);
 }
 
 /**
- * Get attendance summary for a worker over a date range (for payroll).
- * Returns days worked (morning+evening = 1 full day, one shift = 0.5).
+ * Re-read the saved documents from the server and confirm that each worker's
+ * state at `siteId` equals what was submitted. Returns mismatching names.
  */
-export async function getWorkerWeeklyAttendanceSummary(
-  workerId: string,
-  startDate: string,
-  endDate: string
-): Promise<{ daysWorked: number; otHours: number }> {
-  const records = await getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
-    where('workerId', '==', workerId),
-    where('date', '>=', startDate),
-    where('date', '<=', endDate),
-  ]);
-
-  let daysWorked = 0;
-  let otHours = 0;
-
-  for (const record of records) {
-    const hasMorning = record.morningSite !== null;
-    const hasEvening = record.eveningSite !== null;
-
-    if (hasMorning && hasEvening) {
-      daysWorked += 1;
-    } else if (hasMorning || hasEvening) {
-      daysWorked += 0.5;
-    }
-
-    otHours += record.otHours || 0;
+export async function verifySiteAttendance(date: string, siteId: string, entries: BulkAttendanceEntry[]): Promise<string[]> {
+  const ids = entries.map((e) => siteAttendanceDocId(e.workerId, date));
+  const docs: SimpleAttendance[] = [];
+  for (let i = 0; i < ids.length; i += 30) {
+    const snap = await getDocs(query(collection(db, COL), where(documentId(), 'in', ids.slice(i, i + 30))));
+    snap.forEach((d) => docs.push({ id: d.id, ...d.data() } as SimpleAttendance));
   }
-
-  return { daysWorked, otHours };
-}
-
-/**
- * Get daily attendance for today's display (all workers)
- */
-export async function getDailySimpleAttendance(date: string): Promise<SimpleAttendance[]> {
-  return getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
-    where('date', '==', date),
-  ]);
-}
-
-/**
- * Get all simple attendance records for a date range (for payroll daily breakdown)
- */
-export async function getSimpleAttendanceForDateRange(
-  startDate: string,
-  endDate: string
-): Promise<SimpleAttendance[]> {
-  return getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
-    where('date', '>=', startDate),
-    where('date', '<=', endDate),
-  ]);
-}
-
-/**
- * Get attendance grouped by site for a worker over a date range.
- * Used by payroll engine for per-site salary calculation.
- * Returns { [siteId]: { daysWorked, otHours } }
- */
-export async function getWorkerWeeklyAttendanceBySite(
-  workerId: string,
-  startDate: string,
-  endDate: string
-): Promise<Record<string, { daysWorked: number; otHours: number }>> {
-  const records = await getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
-    where('workerId', '==', workerId),
-    where('date', '>=', startDate),
-    where('date', '<=', endDate),
-  ]);
-
-  const siteMap: Record<string, { daysWorked: number; otHours: number }> = {};
-
-  for (const record of records) {
-    const morningSite = record.morningSite;
-    const eveningSite = record.eveningSite;
-
-    // Check if this is a multi-site role (supervisor/manager/ceo/owner)
-    // For these roles, each site visit counts independently
-    const isMultiSiteRole = record.role && ['owner', 'ceo', 'manager', 'supervisor'].includes(record.role);
-
-    if (isMultiSiteRole) {
-      // Multi-site roles: each site visit = 1 full visit (not 0.5)
-      if (morningSite) {
-        if (!siteMap[morningSite]) siteMap[morningSite] = { daysWorked: 0, otHours: 0 };
-        siteMap[morningSite].daysWorked += 1; // Full visit per site
-        console.log('[SUPERVISOR PAYROLL]', record.workerId, record.date, morningSite, 'visit=1');
-      }
-      if (eveningSite && eveningSite !== morningSite) {
-        if (!siteMap[eveningSite]) siteMap[eveningSite] = { daysWorked: 0, otHours: 0 };
-        siteMap[eveningSite].daysWorked += 1; // Full visit per site
-        console.log('[SUPERVISOR PAYROLL]', record.workerId, record.date, eveningSite, 'visit=1');
-      }
-    } else {
-      // Normal workers: morning = 0.5, evening = 0.5
-      if (morningSite) {
-        if (!siteMap[morningSite]) siteMap[morningSite] = { daysWorked: 0, otHours: 0 };
-        siteMap[morningSite].daysWorked += 0.5;
-      }
-      if (eveningSite) {
-        if (!siteMap[eveningSite]) siteMap[eveningSite] = { daysWorked: 0, otHours: 0 };
-        siteMap[eveningSite].daysWorked += 0.5;
-      }
-    }
-
-    // OT hours: if morning and evening are same site, credit to that site.
-    // If different sites, credit to evening site (convention: OT is after regular hours).
-    // If only one site present, credit to that site.
-    const otHours = record.otHours || 0;
-    if (otHours > 0) {
-      const otSite = eveningSite || morningSite;
-      if (otSite) {
-        if (!siteMap[otSite]) siteMap[otSite] = { daysWorked: 0, otHours: 0 };
-        siteMap[otSite].otHours += otHours;
-      }
+  const mismatches: string[] = [];
+  for (const e of entries) {
+    const state = effectiveWorkerDay(docs, e.workerId, date);
+    const s = state.sites[siteId] || { morning: false, evening: false };
+    const ot = state.ot[siteId] || 0;
+    if (s.morning !== !!e.morning || s.evening !== !!e.evening || ot !== Math.max(0, Number(e.otHours) || 0)) {
+      mismatches.push(e.workerName);
     }
   }
-
-  return siteMap;
+  return mismatches;
 }
 
 // =====================================================
-// DRIVER ATTENDANCE
+// DRIVER ATTENDANCE SAVE
 // =====================================================
 
-/**
- * Mark driver attendance — supports morning/evening shifts + OT
- */
-export async function markDriverAttendance(
-  data: {
-    date: string;
-    workerId: string;
-    workerName: string;
-    morningPresent: boolean;
-    eveningPresent: boolean;
-    morningOtHours: number;
-    eveningOtHours: number;
-    supervisorId: string;
-    remarks?: string;
-  }
-): Promise<string> {
-  // Look for existing driver attendance record
-  const existing = await getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
-    where('workerId', '==', data.workerId),
-    where('date', '==', data.date),
-    where('attendanceType', '==', 'driver'),
-  ]);
-
-  const payload: Record<string, any> = {
-    morningPresent: data.morningPresent,
-    eveningPresent: data.eveningPresent,
-    morningOtHours: data.morningOtHours,
-    eveningOtHours: data.eveningOtHours,
-    // Backward compatibility fields
-    present: data.morningPresent || data.eveningPresent,
-    otHours: data.morningOtHours + data.eveningOtHours,
-    morningSite: null,
-    eveningSite: null,
-    supervisorId: data.supervisorId,
-    attendanceType: 'driver',
-    role: 'driver',
-  };
-  if (data.remarks !== undefined) payload.remarks = data.remarks;
-
-  if (existing.length > 0) {
-    await updateDocument<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, existing[0].id, payload);
-    return existing[0].id;
-  }
-
-  return createDocument<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, {
-    date: data.date,
-    workerId: data.workerId,
-    workerName: data.workerName,
-    ...payload,
-  } as any);
+export interface DriverAttendanceEntry {
+  workerId: string;
+  workerName: string;
+  morningPresent: boolean;
+  eveningPresent: boolean;
+  morningOtHours: number;
+  eveningOtHours: number;
+  remarks?: string;
 }
 
 /**
- * Bulk mark driver attendance for multiple drivers
+ * Save driver shifts (no site) for one date, all drivers in one transaction.
  */
 export async function bulkMarkDriverAttendance(
   date: string,
-  entries: {
-    workerId: string;
-    workerName: string;
-    morningPresent: boolean;
-    eveningPresent: boolean;
-    morningOtHours: number;
-    eveningOtHours: number;
-    remarks?: string;
-  }[],
-  supervisorId: string
-): Promise<{ success: number; failed: number }> {
-  const batch = writeBatch(db);
-  let success = 0;
-  let failed = 0;
+  entries: DriverAttendanceEntry[],
+  actorUid: string
+): Promise<SaveResult> {
+  const dayDocs = await getSimpleAttendance(date);
+  const legacyByWorker = new Map<string, SimpleAttendance[]>();
+  for (const r of dayDocs) {
+    if (!isDriverRecord(r) || r.superseded) continue;
+    if (r.id === driverAttendanceDocId(r.workerId, date)) continue;
+    legacyByWorker.set(r.workerId, [...(legacyByWorker.get(r.workerId) || []), r]);
+  }
 
-  // Fetch existing driver records for this date
-  const existingRecords = await getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
-    where('date', '==', date),
-    where('attendanceType', '==', 'driver'),
-  ]);
-  const existingMap = new Map(existingRecords.map(r => [r.workerId, r]));
-
-  for (const entry of entries) {
-    try {
-      const existing = existingMap.get(entry.workerId);
-
-      const payload = {
-        morningPresent: entry.morningPresent,
-        eveningPresent: entry.eveningPresent,
-        morningOtHours: entry.morningOtHours,
-        eveningOtHours: entry.eveningOtHours,
-        // Backward compatibility fields
-        present: entry.morningPresent || entry.eveningPresent,
-        otHours: entry.morningOtHours + entry.eveningOtHours,
-        remarks: entry.remarks || null,
-        supervisorId,
-        updatedAt: serverTimestamp(),
-      };
-
-      if (existing) {
-        const docRef = doc(db, SIMPLE_ATTENDANCE_COLLECTION, existing.id);
-        batch.update(docRef, payload);
-      } else {
-        const newDocRef = doc(collection(db, SIMPLE_ATTENDANCE_COLLECTION));
-        batch.set(newDocRef, {
-          date,
-          workerId: entry.workerId,
-          workerName: entry.workerName,
-          morningSite: null,
-          eveningSite: null,
-          attendanceType: 'driver',
-          role: 'driver',
-          createdAt: serverTimestamp(),
-          ...payload,
-        });
+  const result = await runTransaction(db, async (tx) => {
+    const result: SaveResult = { success: 0, failed: 0, written: 0, supersededLegacy: 0, errors: [] };
+    const refs = entries.map((e) => doc(db, COL, driverAttendanceDocId(e.workerId, date)));
+    const snaps = await Promise.all(refs.map((ref) => tx.get(ref)));
+    entries.forEach((e, idx) => {
+      const morningOt = Math.max(0, Number(e.morningOtHours) || 0);
+      const eveningOt = Math.max(0, Number(e.eveningOtHours) || 0);
+      const hasLegacy = (legacyByWorker.get(e.workerId) || []).length > 0;
+      if (!snaps[idx].exists() && !hasLegacy && !e.morningPresent && !e.eveningPresent && morningOt + eveningOt === 0 && !e.remarks) {
+        result.success++; // absent, nothing stored — nothing to write
+        return;
       }
-      success++;
-    } catch {
-      failed++;
-    }
+      tx.set(refs[idx], {
+        date,
+        workerId: e.workerId,
+        workerName: e.workerName,
+        role: 'driver',
+        attendanceType: 'driver',
+        morningPresent: !!e.morningPresent,
+        eveningPresent: !!e.eveningPresent,
+        morningOtHours: morningOt,
+        eveningOtHours: eveningOt,
+        present: !!e.morningPresent || !!e.eveningPresent,
+        otHours: morningOt + eveningOt,
+        morningSite: null,
+        eveningSite: null,
+        remarks: e.remarks || null,
+        supervisorId: actorUid,
+        updatedBy: actorUid,
+        updatedAt: serverTimestamp(),
+        ...(snaps[idx].exists() ? {} : { createdAt: serverTimestamp(), createdBy: actorUid }),
+      });
+      result.written++;
+      for (const old of legacyByWorker.get(e.workerId) || []) {
+        tx.update(doc(db, COL, old.id), { superseded: true, supersededBy: refs[idx].id, supersededAt: serverTimestamp(), updatedBy: actorUid });
+        result.supersededLegacy++;
+      }
+      result.success++;
+    });
+    return result;
+  });
+  log.info('Driver attendance saved', { date, ...result });
+  if (result.written > 0) {
+    await auditAction('update', 'attendance', `${date}_drivers`, { newValue: { date, driversWritten: result.written } });
   }
-
-  if (success > 0) {
-    await batch.commit();
-  }
-
-  return { success, failed };
-}
-
-/**
- * Get driver attendance records for a date
- */
-export async function getDriverAttendance(date: string): Promise<SimpleAttendance[]> {
-  return getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
-    where('date', '==', date),
-    where('attendanceType', '==', 'driver'),
-  ]);
-}
-
-/**
- * Get driver attendance for a date range (for payroll)
- */
-export async function getDriverAttendanceForDateRange(
-  startDate: string,
-  endDate: string
-): Promise<SimpleAttendance[]> {
-  return getDocuments<SimpleAttendance>(SIMPLE_ATTENDANCE_COLLECTION, [
-    where('attendanceType', '==', 'driver'),
-    where('date', '>=', startDate),
-    where('date', '<=', endDate),
-  ]);
+  return result;
 }

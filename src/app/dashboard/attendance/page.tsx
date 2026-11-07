@@ -1,7 +1,5 @@
 'use client';
 
-import { extractOtHours } from "@/domain/attendance";
-
 /**
  * =====================================================
  * ATTENDANCE PAGE
@@ -36,18 +34,23 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   getSimpleAttendance,
   bulkMarkSimpleAttendance,
+  verifySiteAttendance,
   getActiveEmployees,
   getAllSites,
   bulkMarkDriverAttendance,
-  getDriverAttendance,
 } from '@/services';
+import { effectiveWorkerDay, driverAttendanceDocId, isDriverRecord } from '@/domain/attendance';
+import { isHigherRoleMultiSite } from '@/domain/roles';
+import { isSiteSelectableForAttendance, isSiteReadOnlyForAttendance } from '@/domain/sites';
+import { ACCESS_MATRIX } from '@/domain/roles';
 import { useRequireRole, useAuth } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 
 import {
   formatDate,
-  toISODateString,
+  todayISO,
+  addDaysISO,
 } from '@/lib/date-utils';
 import type { SimpleAttendance, BulkAttendanceEntry, UserRole } from '@/types';
 
@@ -75,16 +78,17 @@ interface WorkerAttendanceRow {
   morning: boolean;
   evening: boolean;
   otHours: number;
-  existing?: SimpleAttendance;
+  /** Other sites (ids → shifts) the worker is already marked at on this date */
+  otherSites: Record<string, { morning: boolean; evening: boolean }>;
 }
 
 export default function AttendancePage() {
-  const { isAuthorized } = useRequireRole(['owner', 'ceo', 'manager', 'supervisor', 'driver']);
+  const { isAuthorized } = useRequireRole(ACCESS_MATRIX.attendance);
   const { profile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [dateStr, setDateStr] = useState<string>(() => todayISO());
   const [selectedSiteId, setSelectedSiteId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [workerRows, setWorkerRows] = useState<WorkerAttendanceRow[]>([]);
@@ -92,9 +96,10 @@ export default function AttendancePage() {
 
   // Guard against re-initializing editable rows every render
   const initializedKeyRef = useRef<string | null>(null);
+  // Bumped after each save so rows are rebuilt from the refetched server data
+  const [rebuildToken, setRebuildToken] = useState(0);
 
-  const dateStr = toISODateString(selectedDate);
-  const isToday = toISODateString(new Date()) === dateStr;
+  const isToday = todayISO() === dateStr;
 
   // Fetch sites
   const { data: sites = EMPTY_SITES } = useQuery({
@@ -112,20 +117,12 @@ export default function AttendancePage() {
     gcTime: 10 * 60 * 1000, // 10 minutes
   });
 
-  // Fetch existing attendance for ENTIRE date (all sites) to show supervisor coverage
-  const { data: allDayAttendance = EMPTY_ATTENDANCE, isLoading } = useQuery({
-    queryKey: ['simple-attendance-all', dateStr],
-    queryFn: () => getSimpleAttendance(dateStr), // No siteId filter — get all sites
-    staleTime: 1 * 60 * 1000, // 1 minute for attendance
-    gcTime: 5 * 60 * 1000, // 5 minutes
-  });
-
-  // Also fetch current site's attendance (needed for form)
-  const { data: siteAttendance = EMPTY_ATTENDANCE, isPending: siteAttendancePending } = useQuery({
-    queryKey: ['simple-attendance', dateStr, selectedSiteId],
-    queryFn: () => getSimpleAttendance(dateStr, selectedSiteId || undefined),
-    enabled: !!selectedSiteId,
-    staleTime: 1 * 60 * 1000,
+  // ONE authoritative query: every attendance document (all sites + drivers)
+  // for the date. The UI is rebuilt from it after every save.
+  const { data: allDayAttendance = EMPTY_ATTENDANCE, isLoading, isPending: dayPending, refetch: refetchDay } = useQuery({
+    queryKey: ['simple-attendance', dateStr],
+    queryFn: () => getSimpleAttendance(dateStr),
+    staleTime: 0,
     gcTime: 5 * 60 * 1000,
   });
 
@@ -142,35 +139,20 @@ export default function AttendancePage() {
     return sites.find((s: any) => s.id === selectedSiteId);
   }, [sites, selectedSiteId]);
 
-  const isSiteReadOnly = selectedSite?.status === 'completed';
+  const isSiteReadOnly = selectedSite ? isSiteReadOnlyForAttendance(selectedSite) : false;
 
-  // Build map: workerId -> set of siteIds where worker is marked any shift
+  // workerId -> number of sites marked today (all documents, normalized)
   const workerSiteCoverage = useMemo(() => {
-    const map = new Map<string, Set<string>>();
-    for (const att of allDayAttendance) {
-      const sites = new Set<string>();
-
-      // Handle both labor (morning/evening) and supervisor (siteVisits) models
-      if (att.morningSite) sites.add(att.morningSite);
-      if (att.eveningSite) sites.add(att.eveningSite);
-      (att.siteVisits || []).forEach(visit => {
-        if (visit.visited) sites.add(visit.siteId);
-      });
-
-      if (sites.size > 0) {
-        map.set(att.workerId, sites);
-      }
-    }
+    const map = new Map<string, number>();
+    const workerIds = new Set(allDayAttendance.filter((a) => !isDriverRecord(a)).map((a) => a.workerId));
+    workerIds.forEach((wid) => {
+      const { sites } = effectiveWorkerDay(allDayAttendance, wid, dateStr);
+      map.set(wid, Object.values(sites).filter((s) => s.morning || s.evening).length);
+    });
     return map;
-  }, [allDayAttendance]);
+  }, [allDayAttendance, dateStr]);
 
-  // Build map for current site only (for form data)
-  const siteAttendanceMap = useMemo(
-    () => new Map(siteAttendance.map((a) => [a.workerId, a])),
-    [siteAttendance]
-  );
-
-  const initializationKey = `${selectedSiteId}-${dateStr}`;
+  const initializationKey = `${selectedSiteId}-${dateStr}-${rebuildToken}`;
 
   useEffect(() => {
     // Only proceed if we have a site and data is loaded
@@ -179,7 +161,7 @@ export default function AttendancePage() {
       return;
     }
     
-    if (employeesPending || siteAttendancePending) {
+    if (employeesPending || dayPending) {
       return;
     }
 
@@ -188,37 +170,30 @@ export default function AttendancePage() {
       return;
     }
 
-    // Get employees assigned to this site (or all if none specifically assigned)
-    const siteEmployees = employees.filter(
-      (e) => e.assignedSites?.includes(selectedSiteId) || e.assignedSites?.length === 0
-    );
+    // Site workers: everyone except drivers (drivers are not site-based),
+    // limited to employees assigned to this site, unassigned employees, and
+    // anyone already marked here today.
+    const siteEmployees = employees.filter((e) => {
+      if (e.role === 'driver') return false;
+      const wid = e.workerId || e.uid;
+      const markedHere = !!effectiveWorkerDay(allDayAttendance, wid, dateStr).sites[selectedSiteId];
+      return markedHere || !e.assignedSites || e.assignedSites.length === 0 || e.assignedSites.includes(selectedSiteId);
+    });
 
     const rows: WorkerAttendanceRow[] = siteEmployees.map((emp) => {
-      const existing = siteAttendanceMap.get(emp.workerId || emp.uid);
-      const isSupervisor = ['owner', 'ceo', 'manager', 'supervisor'].includes(emp.role);
-
-      // For supervisors: check if siteId is in siteVisits array
-      // For labor: check if siteId matches morningSite or eveningSite
-      let morning = false;
-      let evening = false;
-
-      if (isSupervisor && existing?.siteVisits) {
-        const visited = existing.siteVisits.find(v => v.siteId === selectedSiteId)?.visited;
-        morning = visited || false;
-        evening = visited || false; // Both use same visited flag for supervisors
-      } else {
-        morning = existing ? existing.morningSite === selectedSiteId : false;
-        evening = existing ? existing.eveningSite === selectedSiteId : false;
-      }
-
+      const wid = emp.workerId || emp.uid;
+      const { sites, ot } = effectiveWorkerDay(allDayAttendance, wid, dateStr);
+      const here = sites[selectedSiteId] || { morning: false, evening: false };
+      const otherSites = { ...sites };
+      delete otherSites[selectedSiteId];
       return {
-        workerId: emp.workerId || emp.uid,
+        workerId: wid,
         workerName: emp.displayName || emp.email,
         role: emp.role,
-        morning,
-        evening,
-        otHours: existing ? extractOtHours(existing, selectedSiteId) : 0,
-        existing,
+        morning: here.morning,
+        evening: here.evening,
+        otHours: ot[selectedSiteId] || 0,
+        otherSites,
       };
     });
 
@@ -226,86 +201,40 @@ export default function AttendancePage() {
     setIsDirty(false);
     initializedKeyRef.current = initializationKey;
   }, [
-    selectedSiteId, 
+    selectedSiteId,
     dateStr,
-    employeesPending, 
-    siteAttendancePending, 
-    employees, 
-    siteAttendanceMap,
+    employeesPending,
+    dayPending,
+    employees,
+    allDayAttendance,
     initializationKey
   ]);
 
-  // Toggle morning checkbox
-  const toggleMorning = useCallback((workerId: string) => {
+  // Toggle a shift. Labor roles may not hold the same shift at two sites.
+  const toggleShift = useCallback((workerId: string, shift: 'morning' | 'evening') => {
     if (isSiteReadOnly) return;
     setWorkerRows((prev) =>
       prev.map((row) => {
         if (row.workerId !== workerId) return row;
-
-        const worker = employees.find(e => (e.workerId || e.uid) === workerId);
-        const canMultipleSites = worker && ['owner', 'ceo', 'manager', 'supervisor'].includes(worker.role);
-
-        // If bass/helper and trying to mark at different site
-        if (!canMultipleSites && !row.morning && row.existing?.morningSite && row.existing.morningSite !== selectedSiteId) {
-          toast({
-            title: 'Not Allowed',
-            description: `${worker?.role} cannot work multiple sites. Morning already marked at different site.`,
-            variant: 'destructive',
-          });
-          return row;
+        const turningOn = !row[shift];
+        if (turningOn && !isHigherRoleMultiSite(row.role)) {
+          const clash = Object.entries(row.otherSites).find(([, st]) => st[shift]);
+          if (clash) {
+            toast({
+              title: 'Not allowed',
+              description: `${row.workerName} is already marked for the ${shift} shift at ${siteNameMap.get(clash[0]) || 'another site'}. Remove it there first.`,
+              variant: 'destructive',
+            });
+            return row;
+          }
         }
-
-        // If bass/helper and evening is marked at different site
-        if (!canMultipleSites && !row.morning && row.evening && row.existing?.eveningSite && row.existing.eveningSite !== selectedSiteId) {
-          toast({
-            title: 'Not Allowed',
-            description: `${worker?.role} must have half-day at each site. Evening already marked at different site.`,
-            variant: 'destructive',
-          });
-          return row;
-        }
-
-        return { ...row, morning: !row.morning };
+        return { ...row, [shift]: turningOn };
       })
     );
     setIsDirty(true);
-  }, [selectedSiteId, employees, toast, isSiteReadOnly]);
-
-  // Toggle evening checkbox
-  const toggleEvening = useCallback((workerId: string) => {
-    if (isSiteReadOnly) return;
-    setWorkerRows((prev) =>
-      prev.map((row) => {
-        if (row.workerId !== workerId) return row;
-
-        const worker = employees.find(e => (e.workerId || e.uid) === workerId);
-        const canMultipleSites = worker && ['owner', 'ceo', 'manager', 'supervisor'].includes(worker.role);
-
-        // If bass/helper and trying to mark at different site
-        if (!canMultipleSites && !row.evening && row.existing?.eveningSite && row.existing.eveningSite !== selectedSiteId) {
-          toast({
-            title: 'Not Allowed',
-            description: `${worker?.role} cannot work multiple sites. Evening already marked at different site.`,
-            variant: 'destructive',
-          });
-          return row;
-        }
-
-        // If bass/helper and morning is marked at different site
-        if (!canMultipleSites && !row.evening && row.morning && row.existing?.morningSite && row.existing.morningSite !== selectedSiteId) {
-          toast({
-            title: 'Not Allowed',
-            description: `${worker?.role} must have half-day at each site. Morning already marked at different site.`,
-            variant: 'destructive',
-          });
-          return row;
-        }
-
-        return { ...row, evening: !row.evening };
-      })
-    );
-    setIsDirty(true);
-  }, [selectedSiteId, employees, toast, isSiteReadOnly]);
+  }, [toast, isSiteReadOnly, siteNameMap]);
+  const toggleMorning = useCallback((workerId: string) => toggleShift(workerId, 'morning'), [toggleShift]);
+  const toggleEvening = useCallback((workerId: string) => toggleShift(workerId, 'evening'), [toggleShift]);
 
   // Update OT hours
   const updateOT = useCallback((workerId: string, hours: number) => {
@@ -332,26 +261,32 @@ export default function AttendancePage() {
         otHours: row.otHours,
       }));
 
-      // Build workerRoles map for role-aware processing
-      const workerRoles: Record<string, string> = {};
-      workerRows.forEach((row) => {
-        workerRoles[row.workerId] = row.role;
-      });
-
-      return bulkMarkSimpleAttendance(dateStr, selectedSiteId, entries, profile.uid, workerRoles);
+      // 1. write (single transaction)  2. verify from the server
+      const result = await bulkMarkSimpleAttendance(dateStr, selectedSiteId, entries, profile.uid);
+      const okEntries = entries.filter((e) => !result.errors.some((err) => err.startsWith(`${e.workerName}:`)));
+      const mismatches = await verifySiteAttendance(dateStr, selectedSiteId, okEntries);
+      return { result, mismatches };
     },
-    onSuccess: (result) => {
-      toast({
-        title: 'Attendance Saved',
-        description: `${result.success} workers marked${result.failed > 0 ? `, ${result.failed} failed` : ''}`,
-      });
+    onSuccess: async ({ result, mismatches }) => {
+      // 3. refetch authoritative records  4. rebuild local rows from them
+      await refetchDay();
+      setRebuildToken((t) => t + 1); // rebuild rows from the authoritative data
+      queryClient.invalidateQueries({ queryKey: ['week-attendance'] });
+      if (mismatches.length > 0 || result.failed > 0) {
+        toast({
+          title: 'Attendance partly saved',
+          description: [...result.errors, ...(mismatches.length ? [`Not confirmed by server: ${mismatches.join(', ')}`] : [])].join(' • '),
+          variant: 'destructive',
+        });
+      } else {
+        toast({ title: 'Attendance saved', description: `${result.success} workers saved and verified` });
+      }
       setIsDirty(false);
-      queryClient.invalidateQueries({ queryKey: ['simple-attendance'] });
     },
-    onError: () => {
+    onError: (error: unknown) => {
       toast({
         title: 'Error',
-        description: 'Failed to save attendance',
+        description: error instanceof Error ? error.message : 'Failed to save attendance',
         variant: 'destructive',
       });
     },
@@ -372,9 +307,8 @@ export default function AttendancePage() {
   });
 
   const navigateDate = (direction: 'prev' | 'next') => {
-    const d = new Date(selectedDate);
-    d.setDate(d.getDate() + (direction === 'prev' ? -1 : 1));
-    setSelectedDate(d);
+    if (isDirty && !window.confirm('You have unsaved attendance changes. Discard them?')) return;
+    setDateStr((d) => addDaysISO(d, direction === 'prev' ? -1 : 1));
   };
 
   if (!isAuthorized) return null;
@@ -397,7 +331,7 @@ export default function AttendancePage() {
           </Button>
           <div className="flex items-center gap-1 sm:gap-2 rounded-md border border-border bg-background px-2 sm:px-3 py-1.5 text-xs sm:text-sm whitespace-nowrap">
             <CalendarIcon className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-            <span className="font-medium">{formatDate(selectedDate, 'DATE_SHORT')}</span>
+            <span className="font-medium">{formatDate(dateStr, 'EEE dd/MM/yyyy')}</span>
             {isToday && (
               <span className="rounded bg-primary/20 px-1 sm:px-1.5 py-0.5 text-xs text-primary font-medium">
                 Today
@@ -414,7 +348,7 @@ export default function AttendancePage() {
             <ChevronRight className="h-4 w-4" />
           </Button>
           {!isToday && (
-            <Button variant="ghost" size="sm" onClick={() => setSelectedDate(new Date())} className="h-9 text-xs">
+            <Button variant="ghost" size="sm" onClick={() => setDateStr(todayISO())} className="h-9 text-xs">
               Today
             </Button>
           )}
@@ -441,12 +375,15 @@ export default function AttendancePage() {
             </div>
             <select
               value={selectedSiteId}
-              onChange={(e) => setSelectedSiteId(e.target.value)}
+              onChange={(e) => {
+                if (isDirty && !window.confirm('You have unsaved attendance changes. Discard them?')) return;
+                setSelectedSiteId(e.target.value);
+              }}
               className="flex-1 min-w-0 h-10 rounded-md border border-border bg-background px-3 text-sm"
             >
               <option value="">— Select a site —</option>
               {sites
-                .filter((site: any) => site.status !== 'inactive' && site.status !== 'archived')
+                .filter((site: any) => isSiteSelectableForAttendance(site))
                 .map((site: any) => (
                   <option key={site.id} value={site.id}>
                     {site.name} — {site.address || site.city || ''} {site.status === 'completed' ? '(Completed - Read-Only)' : ''}
@@ -474,8 +411,9 @@ export default function AttendancePage() {
           <div className="space-y-2 text-xs sm:text-sm">
             <p className="font-medium text-foreground">Multi-Site Work Rules:</p>
             <ul className="list-inside space-y-1 text-muted-foreground">
-              <li>✓ <strong className="text-foreground">Owner, CEO, Manager, Supervisor</strong> — Can visit multiple sites daily</li>
-              <li>✓ <strong className="text-foreground">Bass, Helper, Draughtsman</strong> — Morning at one site, evening at another</li>
+              <li>✓ <strong className="text-foreground">Owner, CEO, Manager, Supervisor</strong> — can be marked at several sites on the same day (paid per site visit)</li>
+              <li>✓ <strong className="text-foreground">Bass, Helper, Draughtsman</strong> — morning and evening may be at different sites (0.5 day each)</li>
+              <li>✓ <strong className="text-foreground">Drivers</strong> — marked below in the Drivers section (no site)</li>
             </ul>
           </div>
         </CardContent>
@@ -708,18 +646,18 @@ export default function AttendancePage() {
                                 )}
 
                                 {/* Show total sites covered today only for owner/ceo/manager/supervisor */}
-                                {(workerSiteCoverage.get(row.workerId)?.size || 0) > 1 &&
-                                  ['owner', 'ceo', 'manager', 'supervisor'].includes(row.role) && (
-                                  <span className="block rounded bg-purple-500/20 px-1 py-0.5 text-xs text-purple-400 font-medium">
-                                    {workerSiteCoverage.get(row.workerId)?.size || 0}📍
+                                {(workerSiteCoverage.get(row.workerId) || 0) > 1 &&
+                                  isHigherRoleMultiSite(row.role) && (
+                                  <span className="block rounded bg-purple-500/20 px-1 py-0.5 text-xs text-purple-600 dark:text-purple-400 font-medium">
+                                    {workerSiteCoverage.get(row.workerId)} sites
                                   </span>
                                 )}
 
-                                {/* Warning for bass/helper if marked at multiple sites */}
-                                {(workerSiteCoverage.get(row.workerId)?.size || 0) > 1 &&
-                                  ['bass', 'helper', 'draughtsman'].includes(row.role) && (
-                                  <span className="block rounded bg-red-500/20 px-1 py-0.5 text-xs text-red-400 font-medium">
-                                    ⚠️ Split
+                                {/* Labor split between two sites (morning/evening) */}
+                                {(workerSiteCoverage.get(row.workerId) || 0) > 1 &&
+                                  !isHigherRoleMultiSite(row.role) && (
+                                  <span className="block rounded bg-amber-500/20 px-1 py-0.5 text-xs text-amber-700 dark:text-amber-400 font-medium">
+                                    Split day
                                   </span>
                                 )}
                               </div>
@@ -767,6 +705,9 @@ export default function AttendancePage() {
         dateStr={dateStr}
         employees={employees}
         profile={profile}
+        dayAttendance={allDayAttendance}
+        dayPending={dayPending}
+        onSaved={refetchDay}
       />
     </div>
   );
@@ -790,10 +731,16 @@ function DriversAttendanceSection({
   dateStr,
   employees,
   profile,
+  dayAttendance,
+  dayPending,
+  onSaved,
 }: {
   dateStr: string;
   employees: any[];
   profile: any;
+  dayAttendance: SimpleAttendance[];
+  dayPending: boolean;
+  onSaved: () => Promise<unknown>;
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -806,23 +753,28 @@ function DriversAttendanceSection({
     [employees]
   );
 
-  // Fetch existing driver attendance
-  const { data: driverAttendance = [], isLoading } = useQuery({
-    queryKey: ['driver-attendance', dateStr],
-    queryFn: () => getDriverAttendance(dateStr),
-    enabled: drivers.length > 0,
-  });
+  const isLoading = dayPending;
+  const driverAttendance = useMemo(
+    () => dayAttendance.filter((a) => isDriverRecord(a) && !a.superseded),
+    [dayAttendance]
+  );
 
-  // Build driver rows
+  // Build driver rows from the authoritative day query
   useEffect(() => {
     if (drivers.length === 0) {
       setDriverRows([]);
       return;
     }
 
-    const existingMap = new Map(
-      driverAttendance.map((a: any) => [a.workerId, a])
-    );
+    // Prefer the deterministic document; fall back to the latest legacy doc.
+    const existingMap = new Map<string, any>();
+    const ts = (a: any) => a.updatedAt?.getTime?.() ?? 0;
+    for (const a of driverAttendance) {
+      const prev = existingMap.get(a.workerId);
+      const isDet = a.id === driverAttendanceDocId(a.workerId, dateStr);
+      const prevDet = prev && prev.id === driverAttendanceDocId(prev.workerId, dateStr);
+      if (!prev || (isDet && !prevDet) || (!prevDet && ts(a) > ts(prev))) existingMap.set(a.workerId, a);
+    }
 
     const rows: DriverRow[] = drivers.map((emp: any) => {
       const existing: any = existingMap.get(emp.workerId || emp.uid);
@@ -839,7 +791,7 @@ function DriversAttendanceSection({
 
     setDriverRows(rows);
     setIsDirty(false);
-  }, [drivers, driverAttendance]);
+  }, [drivers, driverAttendance, dateStr]);
 
   // Save mutation
   const saveMutation = useMutation({
@@ -856,13 +808,14 @@ function DriversAttendanceSection({
       }));
       return bulkMarkDriverAttendance(dateStr, entries, profile.uid);
     },
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
+      await onSaved();
       toast({
-        title: 'Driver Attendance Saved',
-        description: `${result.success} drivers marked${result.failed > 0 ? `, ${result.failed} failed` : ''}`,
+        title: 'Driver attendance saved',
+        description: `${result.success} drivers saved${result.failed > 0 ? `, ${result.failed} failed` : ''}`,
       });
       setIsDirty(false);
-      queryClient.invalidateQueries({ queryKey: ['driver-attendance'] });
+      queryClient.invalidateQueries({ queryKey: ['week-attendance'] });
     },
     onError: () => {
       toast({ title: 'Error', description: 'Failed to save driver attendance', variant: 'destructive' });

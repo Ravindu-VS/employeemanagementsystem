@@ -31,6 +31,22 @@ import type { PaginatedResponse, PaginationParams } from '@/types';
 /**
  * Generic function to get a single document by ID
  */
+/**
+ * Firestore rejects `undefined` field values. Remove them (recursively in
+ * plain objects/arrays) so optional form fields never break a write.
+ */
+export function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((v) => stripUndefined(v)) as unknown as T;
+  if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v !== undefined) out[k] = stripUndefined(v);
+    }
+    return out as T;
+  }
+  return value;
+}
+
 export async function getDocument<T>(
   collectionName: string,
   docId: string
@@ -137,7 +153,7 @@ export async function createDocument<T>(
   try {
     const collectionRef = collection(db, collectionName);
     const docRef = await addDoc(collectionRef, {
-      ...data,
+      ...stripUndefined(data as Record<string, unknown>),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -161,7 +177,7 @@ export async function createDocumentWithId<T>(
     const docRef = doc(db, collectionName, docId);
     const { setDoc } = await import('firebase/firestore');
     await setDoc(docRef, {
-      ...data,
+      ...stripUndefined(data as Record<string, unknown>),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -182,7 +198,7 @@ export async function updateDocument<T>(
   try {
     const docRef = doc(db, collectionName, docId);
     await updateDoc(docRef, {
-      ...data,
+      ...stripUndefined(data as Record<string, unknown>),
       updatedAt: serverTimestamp(),
     });
   } catch (error) {

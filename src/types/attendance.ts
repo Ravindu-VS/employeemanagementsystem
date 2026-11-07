@@ -114,6 +114,14 @@ export interface SimpleAttendance {
   eveningOtHours?: number;
   remarks?: string;            // For drivers: additional remarks
   notes?: string;
+  /**
+   * Set (never deleted) when a legacy random-ID document has been folded into
+   * its deterministic replacement. Superseded docs are ignored by every reader.
+   */
+  superseded?: boolean;
+  supersededBy?: string;
+  createdBy?: string;
+  updatedBy?: string;
   createdAt: Date;
   updatedAt: Date;
 }
