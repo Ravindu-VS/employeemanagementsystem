@@ -15,6 +15,7 @@ import {
   where,
   orderBy,
 } from '@/lib/firebase/firestore';
+import { auditAction } from './audit-service';
 import { COLLECTIONS, PAYROLL_CONFIG } from '@/constants';
 import type { 
   Loan, 
@@ -171,7 +172,9 @@ export async function createLoanRequest(
     payments: [],
   };
   
-  return createDocument<Loan>(COLLECTIONS.LOANS, loanData as any);
+  const id = await createDocument<Loan>(COLLECTIONS.LOANS, loanData as any);
+  await auditAction('create', 'loans', id, { newValue: { employeeId: data.employeeId } });
+  return id;
 }
 
 /**
@@ -196,6 +199,7 @@ export async function approveLoan(
     approvedBy,
     approvedAt: new Date(),
   });
+  await auditAction('approve', 'loans', loanId, { newValue: { action: 'approveLoan' } });
 }
 
 /**
@@ -216,6 +220,7 @@ export async function disburseLoan(loanId: string): Promise<void> {
     status: 'active',
     disbursedAt: new Date(),
   });
+  await auditAction('update', 'loans', loanId, { newValue: { action: 'disburseLoan' } });
 }
 
 /**
@@ -242,6 +247,7 @@ export async function rejectLoan(
   await updateDocument<Loan>(COLLECTIONS.LOANS, loanId, {
     status: 'cancelled',
   });
+  await auditAction('reject', 'loans', loanId, { newValue: { action: 'rejectLoan' } });
 }
 
 /**
@@ -249,42 +255,15 @@ export async function rejectLoan(
  */
 export async function recordLoanPayment(
   loanId: string,
-  payrollId: string
+  payrollId: string,
+  amount?: number
 ): Promise<void> {
+  // Single implementation lives in payroll-service (idempotent, transactional).
+  const { recordLoanInstalment } = await import('./payroll-service');
   const loan = await getLoan(loanId);
-  
-  if (!loan) {
-    throw new Error('Loan not found');
-  }
-  
-  if (loan.status !== 'active') {
-    throw new Error('Loan is not active');
-  }
-  
-  const newEmiNumber = loan.paidEmis + 1;
-  
-  const payment: LoanPayment = {
-    id: Date.now().toString(),
-    emiNumber: newEmiNumber,
-    amount: loan.emiAmount,
-    payrollId,
-    paidAt: new Date(),
-  };
-  
-  const payments = [...loan.payments, payment];
-  const paidEmis = newEmiNumber;
-  const remainingAmount = loan.totalAmount - (paidEmis * loan.emiAmount);
-  
-  // Check if loan is complete
-  const isComplete = paidEmis >= loan.totalEmis || remainingAmount <= 0;
-  
-  await updateDocument<Loan>(COLLECTIONS.LOANS, loanId, {
-    payments,
-    paidEmis,
-    remainingAmount: Math.max(0, remainingAmount),
-    status: isComplete ? 'completed' : 'active',
-    completedAt: isComplete ? new Date() : undefined,
-  });
+  if (!loan) throw new Error('Loan not found');
+  if (loan.status !== 'active') throw new Error('Loan is not active');
+  await recordLoanInstalment(loanId, payrollId, amount ?? loan.emiAmount);
 }
 
 /**

@@ -50,6 +50,9 @@ export interface AdvanceRequest {
   deductionWeek?: string;       // YYYY-MM-DD week for future deduction
   deductionWeekId?: string;     // Week when actually deducted (legacy)
   deductedWeek?: string;        // Week when actually deducted (YYYY-MM-DD)
+  deducted?: boolean;           // legacy duplicate of isDeducted (both are written)
+  advanceDate?: string;         // yyyy-MM-dd (Colombo) date the money was given
+  deductedInPayrollId?: string;
   isDeducted: boolean;
   carryForward: boolean;        // true = carried forward, not deducted
   advanceState?: AdvanceState;  // Current state in the carry-forward workflow

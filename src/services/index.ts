@@ -38,51 +38,35 @@ export {
   generateSiteCode,
 } from './site-service';
 
-// Attendance Service
+// Attendance Service (simpleAttendance — deterministic ids, transactional save)
 export {
-  getAttendance,
-  getOrCreateAttendance,
-  startAttendanceSegment,
-  endAttendanceSegment,
-  markAbsent,
-  markOnLeave,
-  getTodayAttendance,
-  getEmployeeAttendanceSummary,
-  autoCloseOrphanedSegments,
-  // Simplified attendance (supervisor marking)
   getSimpleAttendance,
-  getWorkerSimpleAttendance,
-  getWorkerAllSimpleAttendance,
-  markSimpleAttendance,
-  bulkMarkSimpleAttendance,
-  getWorkerWeeklyAttendanceSummary,
-  getWorkerWeeklyAttendanceBySite,
-  getDailySimpleAttendance,
   getSimpleAttendanceForDateRange,
-  // Driver attendance
-  markDriverAttendance,
-  bulkMarkDriverAttendance,
   getDriverAttendance,
-  getDriverAttendanceForDateRange,
+  getEmployeeAttendanceSummary,
+  bulkMarkSimpleAttendance,
+  verifySiteAttendance,
+  bulkMarkDriverAttendance,
 } from './attendance-service';
 
-// Payroll Service
+// Payroll Service (data access only — calculation is domain/payroll/engine.ts)
 export {
   getPayroll,
   getPayrollsForWeek,
   getEmployeePayrollHistory,
-  generateEmployeePayroll,
+  computePayrollForPeriod,
+  loadPayrollInputs,
+  previewWeeklyPayroll,
   generateWeeklyPayroll,
-  addBonus,
-  addDeduction,
   updatePayrollStatus,
   markAsPaid,
-  getWeeklyPayrollSummary,
+  recordLoanInstalment,
 } from './payroll-service';
 
 // Advance Service
 export {
   getAdvance,
+  getAllAdvances,
   getPendingAdvances,
   getEmployeeAdvances,
   getAdvancesPaginated,

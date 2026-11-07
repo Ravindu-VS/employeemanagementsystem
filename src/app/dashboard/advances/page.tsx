@@ -33,7 +33,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   getPendingAdvances,
-  getAdvancesPaginated,
+  getAllAdvances,
   approveAdvance,
   rejectAdvance,
   getAllEmployees,
@@ -42,11 +42,12 @@ import {
   updateAdvanceRequest,
   deleteAdvance,
 } from '@/services';
+import { ACCESS_MATRIX } from '@/domain/roles';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, cn } from '@/lib/utils';
-import { formatDate, getWeekStart, getWeekEnd, formatWeekRange, toISODateString, subWeeks, addWeeks } from '@/lib/date-utils';
-import { groupWeeklyAdvances } from '@/domain/advances/grouping';
+import { formatDate, getWeekStart, getWeekEnd, formatWeekRange, toISODateString, subWeeks, addWeeks, todayISO } from '@/lib/date-utils';
+import { groupWeeklyAdvances, advanceDate } from '@/domain/advances';
 import type { RequestStatus, AdvanceRequest } from '@/types';
 
 // Status configuration
@@ -99,7 +100,7 @@ function WeeklyBadge({ type }: { type: 'thisWeek' | 'carryForward' | 'pending' |
 export default function AdvancesPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { isAuthorized, user } = useRequireRole(['owner', 'ceo', 'manager']);
+  const { isAuthorized, user } = useRequireRole(ACCESS_MATRIX.advances);
 
   // Week selector
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -118,7 +119,7 @@ export default function AdvancesPage() {
     employeeId: '',
     amount: '',
     reason: '',
-    date: new Date().toISOString().split('T')[0],
+    date: todayISO(),
   });
   const [rejectReason, setRejectReason] = useState('');
   const [rejectingId, setRejectingId] = useState<string | null>(null);
@@ -128,11 +129,12 @@ export default function AdvancesPage() {
     data: allAdvancesData,
     isLoading,
   } = useQuery({
-    queryKey: ['advances', { page: 1, limit: 200 }],
-    queryFn: () => getAdvancesPaginated({ page: 1, limit: 200 }),
+    // All advances (an arbitrary first page could hide old carry-forwards)
+    queryKey: ['advances', 'all'],
+    queryFn: getAllAdvances,
   });
 
-  const allAdvances = allAdvancesData?.data || [];
+  const allAdvances = allAdvancesData || [];
 
   // Fetch employees for create form
   const { data: employees = [] } = useQuery({
@@ -208,7 +210,7 @@ export default function AdvancesPage() {
         description: 'The advance request has been created.',
       });
       setShowCreateModal(false);
-      setNewAdvance({ employeeId: '', amount: '', reason: '', date: new Date().toISOString().split('T')[0] });
+      setNewAdvance({ employeeId: '', amount: '', reason: '', date: todayISO() });
       queryClient.invalidateQueries({ queryKey: ['advances'] });
     },
     onError: (error: any) => {
@@ -231,7 +233,7 @@ export default function AdvancesPage() {
       });
       setShowEditModal(false);
       setEditingAdvanceId(null);
-      setNewAdvance({ employeeId: '', amount: '', reason: '', date: new Date().toISOString().split('T')[0] });
+      setNewAdvance({ employeeId: '', amount: '', reason: '', date: todayISO() });
       queryClient.invalidateQueries({ queryKey: ['advances'] });
     },
     onError: (error: any) => {
@@ -278,14 +280,9 @@ export default function AdvancesPage() {
   const pendings = searchFiltered.filter(a => a.status === 'pending');
 
   // Get approved advances for weekly view (only show approved & undeducted)
-  const approvedUndeducted = searchFiltered.filter(a => {
-    const isDed = (a as any).isDeducted || (a as any).deducted || false;
-    return a.status === 'approved' && !isDed;
-  });
-
-  // Group weekly advances
+  // Group weekly advances: this week / carried forward from earlier weeks
   const { thisWeek, carryForward } = groupWeeklyAdvances(
-    approvedUndeducted,
+    searchFiltered,
     weekStartISO,
     weekEndISO
   );
@@ -426,7 +423,7 @@ export default function AdvancesPage() {
                         <p className="font-medium truncate">{advance.employeeName}</p>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <Calendar className="h-3 w-3" />
-                          {formatDate(advance.requestedAt || advance.createdAt)}
+                          {formatDate(advanceDate(advance) || advance.createdAt, 'EEE dd/MM/yyyy')}
                           {advance.reason && <span className="truncate">• {advance.reason}</span>}
                         </div>
                       </div>
@@ -532,7 +529,7 @@ export default function AdvancesPage() {
                         <p className="font-medium">{advance.employeeName}</p>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <Calendar className="h-3 w-3" />
-                          {formatDate(advance.requestedAt || advance.createdAt)}
+                          {formatDate(advanceDate(advance) || advance.createdAt, 'EEE dd/MM/yyyy')}
                           {advance.reason && <span className="truncate">• {advance.reason}</span>}
                         </div>
                       </div>
@@ -568,11 +565,7 @@ export default function AdvancesPage() {
           ) : (
             <div className="divide-y divide-border/50">
               {carryForward.map((advance) => {
-                const advanceWeekStart = toISODateString(
-                  getWeekStart(typeof advance.requestedAt === 'string'
-                    ? new Date(advance.requestedAt)
-                    : advance.requestedAt)
-                );
+                const advanceWeekStart = toISODateString(getWeekStart(advanceDate(advance)));
                 return (
                   <div key={advance.id} className="p-4 transition-colors hover:bg-muted/30">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -584,7 +577,7 @@ export default function AdvancesPage() {
                           <p className="font-medium">{advance.employeeName}</p>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <Calendar className="h-3 w-3" />
-                            {formatDate(advance.requestedAt || advance.createdAt)}
+                            {formatDate(advanceDate(advance) || advance.createdAt, 'EEE dd/MM/yyyy')}
                             {advance.reason && <span className="truncate">• {advance.reason}</span>}
                           </div>
                         </div>
@@ -674,7 +667,7 @@ export default function AdvancesPage() {
                   variant="outline"
                   onClick={() => {
                     setShowCreateModal(false);
-                    setNewAdvance({ employeeId: '', amount: '', reason: '', date: new Date().toISOString().split('T')[0] });
+                    setNewAdvance({ employeeId: '', amount: '', reason: '', date: todayISO() });
                   }}
                 >
                   Cancel

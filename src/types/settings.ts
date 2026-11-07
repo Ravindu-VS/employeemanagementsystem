@@ -26,6 +26,17 @@ export interface PayrollSettings {
   defaultInterestRate: number;
   autoDeductAdvances: boolean;
   autoDeductLoans: boolean;
+  /** Supervisor pay per distinct site visited per day (LKR). Default 2000. */
+  supervisorSiteVisitRate?: number;
+  /** Distance-band transport allowance rules (rateType = 'distance_band'). */
+  transportBands?: TransportBand[];
+}
+
+export interface TransportBand {
+  minKm: number;        // inclusive
+  maxKm: number | null; // exclusive; null = no upper bound
+  ratePerDay: number;   // LKR per day worked
+  label?: string;
 }
 
 export interface AttendanceSettings {

@@ -37,6 +37,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { ACCESS_MATRIX } from '@/domain/roles';
 import { useRequireRole, useAuth } from '@/components/providers/auth-provider';
 import {
   updateEmployee,
@@ -102,7 +103,7 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
   const { user, profile } = useAuth();
-  const { isAuthorized } = useRequireRole(['owner', 'ceo', 'manager']);
+  const { isAuthorized } = useRequireRole(ACCESS_MATRIX.settings);
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   
@@ -430,32 +431,22 @@ export default function SettingsPage() {
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Week Start Day</Label>
-                    <select
-                      value={payrollData.payrollStartDay}
-                      onChange={(e) => setPayrollData(prev => ({ ...prev, payrollStartDay: parseInt(e.target.value) }))}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      <option value={0}>Sunday</option>
-                      <option value={1}>Monday</option>
-                      <option value={6}>Saturday</option>
-                    </select>
+                    <Label>Payroll week</Label>
+                    <div className="flex h-10 items-center rounded-md border border-border bg-muted/50 px-3 text-sm">Monday → Saturday (+ emergency Sunday when marked)</div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Working Days per Week</Label>
-                    <Input type="number" min={1} max={7} value={payrollData.workingDaysPerWeek} onChange={(e) => setPayrollData(prev => ({ ...prev, workingDaysPerWeek: parseInt(e.target.value) || 6 }))} />
+                    <Label>OT hourly rate</Label>
+                    <div className="flex h-10 items-center rounded-md border border-border bg-muted/50 px-3 text-sm">Daily salary ÷ 8 (company rule)</div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Regular Hours per Day</Label>
-                    <Input type="number" min={1} max={24} value={payrollData.regularHoursPerDay} onChange={(e) => setPayrollData(prev => ({ ...prev, regularHoursPerDay: parseInt(e.target.value) || 8 }))} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>OT Multiplier</Label>
-                    <Input type="number" step="0.1" min={1} value={payrollData.otMultiplier} onChange={(e) => setPayrollData(prev => ({ ...prev, otMultiplier: parseFloat(e.target.value) || 1.5 }))} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Holiday Multiplier</Label>
-                    <Input type="number" step="0.1" min={1} value={payrollData.holidayMultiplier} onChange={(e) => setPayrollData(prev => ({ ...prev, holidayMultiplier: parseFloat(e.target.value) || 2.0 }))} />
+                    <Label>Supervisor pay per site visit (LKR)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={payrollData.supervisorSiteVisitRate ?? 2000}
+                      onChange={(e) => setPayrollData(prev => ({ ...prev, supervisorSiteVisitRate: Math.max(0, Number(e.target.value) || 0) }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Paid for each distinct site a supervisor visits per day. Can be overridden per employee.</p>
                   </div>
                   <div className="space-y-2">
                     <Label>Max Advance (% of salary)</Label>
@@ -472,18 +463,38 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="space-y-3 pt-4 border-t border-border">
+                  <p className="text-sm font-medium text-muted-foreground">Transport allowance — distance bands</p>
+                  <p className="text-xs text-muted-foreground">Used for employees whose transport rate type is “Distance band”. Allowance = band rate × days worked.</p>
+                  {(payrollData.transportBands || []).map((band, i) => (
+                    <div key={i} className="grid grid-cols-2 gap-2 sm:grid-cols-5 sm:items-end">
+                      <div className="space-y-1"><Label className="text-xs">From km</Label><Input type="number" min={0} value={band.minKm} onChange={(e) => setPayrollData(prev => ({ ...prev, transportBands: (prev.transportBands || []).map((b, j) => j === i ? { ...b, minKm: Number(e.target.value) || 0 } : b) }))} /></div>
+                      <div className="space-y-1"><Label className="text-xs">To km (blank = no limit)</Label><Input type="number" min={0} value={band.maxKm ?? ''} onChange={(e) => setPayrollData(prev => ({ ...prev, transportBands: (prev.transportBands || []).map((b, j) => j === i ? { ...b, maxKm: e.target.value === '' ? null : Number(e.target.value) } : b) }))} /></div>
+                      <div className="space-y-1"><Label className="text-xs">LKR per day</Label><Input type="number" min={0} value={band.ratePerDay} onChange={(e) => setPayrollData(prev => ({ ...prev, transportBands: (prev.transportBands || []).map((b, j) => j === i ? { ...b, ratePerDay: Number(e.target.value) || 0 } : b) }))} /></div>
+                      <div className="space-y-1"><Label className="text-xs">Label</Label><Input value={band.label || ''} onChange={(e) => setPayrollData(prev => ({ ...prev, transportBands: (prev.transportBands || []).map((b, j) => j === i ? { ...b, label: e.target.value } : b) }))} /></div>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setPayrollData(prev => ({ ...prev, transportBands: (prev.transportBands || []).filter((_, j) => j !== i) }))}>Remove</Button>
+                    </div>
+                  ))}
+                  <Button type="button" variant="outline" size="sm" onClick={() => setPayrollData(prev => {
+                    const bands = prev.transportBands || [];
+                    const last = bands[bands.length - 1];
+                    const start = last?.maxKm ?? (last ? last.minKm + 10 : 0);
+                    return { ...prev, transportBands: [...bands, { minKm: start, maxKm: null, ratePerDay: 0 }] };
+                  })}>Add distance band</Button>
+                </div>
+
+                <div className="space-y-3 pt-4 border-t border-border">
                   <p className="text-sm font-medium text-muted-foreground">Automatic Deductions</p>
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">Auto-Deduct Advances</p>
-                      <p className="text-sm text-muted-foreground">Automatically deduct approved advances from payroll</p>
+                      <p className="text-sm text-muted-foreground">Pre-tick “Deduct this week” for approved advances in payroll (the administrator can still untick to carry forward)</p>
                     </div>
                     <Toggle checked={payrollData.autoDeductAdvances} onChange={(v) => setPayrollData(prev => ({ ...prev, autoDeductAdvances: v }))} />
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">Auto-Deduct Loans</p>
-                      <p className="text-sm text-muted-foreground">Automatically deduct loan EMIs from payroll</p>
+                      <p className="text-sm text-muted-foreground">Deduct the weekly instalment of active loans in payroll</p>
                     </div>
                     <Toggle checked={payrollData.autoDeductLoans} onChange={(v) => setPayrollData(prev => ({ ...prev, autoDeductLoans: v }))} />
                   </div>

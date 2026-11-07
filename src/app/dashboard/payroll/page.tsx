@@ -2,774 +2,272 @@
 
 /**
  * =====================================================
- * PAYROLL PAGE - Redesigned
+ * PAYROLL PAGE
  * =====================================================
- * Section 1: Week Selector + Generate/Preview
- * Section 2: Site Summary Cards
- * Section 3: Worker Payroll Cards (collapsible)
- * Section 4: Payroll Summary
- *
- * All data from real Firebase queries - zero mocks.
+ * Week selector → Overall summary → Site summary → Employee summaries →
+ * Grand total. Every figure comes from the single payroll engine
+ * (domain/payroll/engine.ts); this page only displays it and records the
+ * administrator's advance decisions (Deduct this week / Carry forward).
  */
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Calendar,
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
-  ChevronUp,
-  DollarSign,
-  Users,
-  Clock,
-  TrendingUp,
-  CheckCircle,
-  XCircle,
-  Loader2,
-  FileText,
-  Wallet,
-  Building2,
-  AlertCircle,
-  Eye,
-  ShieldCheck,
+  Calendar, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, CheckCircle, Loader2,
+  Wallet, ShieldCheck, AlertTriangle, Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  getPayrollsForWeek,
-  generateWeeklyPayroll,
-  markAsPaid,
-  updatePayrollStatus,
-  getSimpleAttendanceForDateRange,
-  getActiveEmployees,
-  getAllSites,
-  getAllPendingAdvances,
-  markAdvanceDeducted,
-  getDriverAttendanceForDateRange,
-  markAdvanceCarriedForward,
-  resetCarryForwardForWeek,
-  getActiveLoans,
-} from '@/services';
+import { Card, CardContent } from '@/components/ui/card';
+import { loadPayrollInputs, generateWeeklyPayroll, getPayrollsForWeek, markAsPaid } from '@/services';
+import { ACCESS_MATRIX } from '@/domain/roles';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, cn } from '@/lib/utils';
-import { calculateOtRate } from "@/domain/payroll";
-import {
-  buildAttendanceEntries,
-  buildEmployeeSummaries,
-  buildSiteTotals,
-  buildGrandTotals,
-} from "@/domain/payroll/aggregation";
-import { groupAdvancesByEmployee, calculateSelectedAdvanceDeductions } from "@/domain/advances/grouping";
+import { addDaysISO, formatDate, getPayrollWeek, getWeekNumber, todayISO, fromISODateString } from '@/lib/date-utils';
+import { computePayroll } from '@/domain/payroll';
 import { WorkerPayrollCard } from '@/components/payroll/WorkerPayrollCard';
-import { SitePayrollCard } from '@/components/payroll/SitePayrollCard';
-import { PayrollSummary } from '@/components/payroll/PayrollSummary';
-import { buildSiteWorkerSummaries } from '@/domain/payroll/site-workers';
-import {
-  formatDate,
-  getWeekNumber,
-  getWeekStart,
-  getWeekEnd,
-  toISODateString,
-  addWeeks,
-  subWeeks,
-} from '@/lib/date-utils';
-import type {
-  PayrollStatus,
-  UserRole,
-  WeeklyPayroll,
-  SimpleAttendance,
-  UserProfile,
-  SiteBreakdown,
-  SitePayrollTotal,
-  Advance,
-  AdvanceRequest,
-  WorkSite,
-} from '@/types';
+import { PayrollOverview, SiteTotalsTable, GrandTotalCard } from '@/components/payroll/PayrollSummary';
+import { RoleBadge } from '@/components/payroll/RoleBadge';
+import type { UserRole, WeeklyPayroll } from '@/types';
 
-// =====================================================
-// CONSTANTS
-// =====================================================
+const selectionKey = (week: string) => `payroll-advance-selections-${week}`;
 
-const statusConfig: Record<PayrollStatus, {
-  label: string;
-  color: string;
-  icon: React.ReactNode;
-}> = {
-  draft: { label: 'Draft', color: 'bg-gray-500/20 text-gray-400 border-gray-500/30', icon: <FileText className="h-3.5 w-3.5" /> },
-  pending_approval: { label: 'Pending', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30', icon: <Clock className="h-3.5 w-3.5" /> },
-  approved: { label: 'Approved', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30', icon: <CheckCircle className="h-3.5 w-3.5" /> },
-  paid: { label: 'Paid', color: 'bg-green-500/20 text-green-400 border-green-500/30', icon: <Wallet className="h-3.5 w-3.5" /> },
-  cancelled: { label: 'Cancelled', color: 'bg-red-500/20 text-red-400 border-red-500/30', icon: <XCircle className="h-3.5 w-3.5" /> },
-};
-
-const roleBadgeColors: Record<UserRole, string> = {
-  owner: 'bg-purple-500/20 text-purple-400',
-  ceo: 'bg-blue-500/20 text-blue-400',
-  manager: 'bg-cyan-500/20 text-cyan-400',
-  supervisor: 'bg-green-500/20 text-green-400',
-  draughtsman: 'bg-yellow-500/20 text-yellow-400',
-  bass: 'bg-orange-500/20 text-orange-400',
-  helper: 'bg-gray-500/20 text-gray-400',
-  driver: 'bg-teal-500/20 text-teal-400',
-};
-
-// =====================================================
-// TYPES
-// =====================================================
-
-interface EmployeeWeekSummary {
-  employeeId: string;
-  employeeName: string;
-  employeeRole: UserRole;
-  daysWorked: number;
-  otHours: number;
-  grossPay: number;
-  dailyRate: number;
-  otRate: number;
-  siteBreakdowns: SiteBreakdown[];
-  advances: AdvanceRequest[];
-  transportAllowance?: number;
-  loanDeductions?: any[];
+function readSelections(week: string): Record<string, boolean> {
+  try {
+    const raw = window.localStorage.getItem(selectionKey(week));
+    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
 }
-
-// =====================================================
-// MAIN PAGE
-// =====================================================
 
 export default function PayrollPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { isAuthorized, user } = useRequireRole(['owner', 'ceo', 'manager']);
+  const { isAuthorized, profile } = useRequireRole(ACCESS_MATRIX.payroll);
 
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [anchorDate, setAnchorDate] = useState<string>(() => todayISO());
+  const week = getPayrollWeek(anchorDate);
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedWorkers, setExpandedWorkers] = useState<Set<string>>(new Set());
-  const [showPreview, setShowPreview] = useState(false);
-  // Track which advances the CEO has checked for deduction (advanceId -> boolean)
-  const [deductionSelections, setDeductionSelections] = useState<Record<string, boolean>>({});
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [selections, setSelections] = useState<Record<string, boolean>>({});
+  const [confirming, setConfirming] = useState(false);
 
-  // Week boundaries (Monday start through Sunday end)
-  const weekStart = getWeekStart(selectedDate);
-  const weekEnd = getWeekEnd(selectedDate);
-  const weekNumber = getWeekNumber(selectedDate);
-
-  const weekStartStr = toISODateString(weekStart);
-  const weekEndStr = toISODateString(weekEnd);
-
-  // Initialize deduction selections from localStorage on mount
+  // advance ticks: per week, remembered on this device until payroll is approved
+  useEffect(() => setSelections(readSelections(week.start)), [week.start]);
   useEffect(() => {
-    const key = `payroll-deductions-${weekStartStr}`;
-    const stored = localStorage.getItem(key);
-    if (stored) {
-      try {
-        setDeductionSelections(JSON.parse(stored));
-      } catch (e) {
-        setDeductionSelections({});
-      }
-    } else {
-      setDeductionSelections({});
-    }
-    setIsLoaded(true);
-  }, [weekStartStr]);
+    try { window.localStorage.setItem(selectionKey(week.start), JSON.stringify(selections)); } catch { /* storage unavailable */ }
+  }, [selections, week.start]);
 
-  // Persist deduction selections to localStorage whenever they change
-  useEffect(() => {
-    if (!isLoaded) return; // Wait for initial load
-    const key = `payroll-deductions-${weekStartStr}`;
-    localStorage.setItem(key, JSON.stringify(deductionSelections));
-  }, [deductionSelections, weekStartStr, isLoaded]);
-
-  // ---- DATA QUERIES (all real Firebase data) ----
-
-  const { data: weekAttendance = [], isLoading: loadingAttendance } = useQuery({
-    queryKey: ['week-attendance', weekStartStr, weekEndStr],
-    queryFn: () => getSimpleAttendanceForDateRange(weekStartStr, weekEndStr),
-    staleTime: 30 * 1000, // 30 seconds - refresh frequently for accurate payroll
-    gcTime: 5 * 60 * 1000, // 5 minutes background cache
+  // ---- DATA (loaded once per week; engine re-runs on every tick) ----
+  const { data: inputs, isLoading: loadingInputs, error: inputsError } = useQuery({
+    queryKey: ['payroll-inputs', week.start],
+    queryFn: () => loadPayrollInputs(week, { excludePaidDates: true }),
+    staleTime: 15 * 1000,
   });
 
-  const { data: driverAttendance = [], isLoading: loadingDriver } = useQuery({
-    queryKey: ['driver-attendance', weekStartStr, weekEndStr],
-    queryFn: () => getDriverAttendanceForDateRange(weekStartStr, weekEndStr),
+  const { data: storedRecords = [], isLoading: loadingStored } = useQuery({
+    queryKey: ['weekly-payroll', week.start],
+    queryFn: () => getPayrollsForWeek(week.start),
   });
 
-  const { data: employees = [] } = useQuery({
-    queryKey: ['active-employees'],
-    queryFn: getActiveEmployees,
-  });
+  const result = useMemo(
+    () => (inputs ? computePayroll({ ...inputs, advanceSelections: selections }) : null),
+    [inputs, selections]
+  );
 
-  const { data: sites = [] } = useQuery({
-    queryKey: ['all-sites'],
-    queryFn: getAllSites,
-  });
-
-  const { data: payrollRecords = [], isLoading: loadingPayroll } = useQuery({
-    queryKey: ['weekly-payroll', weekStartStr],
-    queryFn: () => getPayrollsForWeek(weekStartStr),
-  });
-
-  // Fetch ALL pending advances in one query - grouped by worker in memory
-  const { data: pendingAdvances = [] } = useQuery({
-    queryKey: ['pending-advances'],
-    queryFn: getAllPendingAdvances,
-  });
-
-  const { data: activeLoans = [] } = useQuery({
-    queryKey: ['active-loans'],
-    queryFn: getActiveLoans,
-  });
-
-  // Auto-check all un-deducted advances for deduction
-  useEffect(() => {
-    if (!isLoaded || pendingAdvances.length === 0) return;
-
-    // Check if current selections state is truly empty (no advances checked)
-    const selectedAdvances = Object.values(deductionSelections).filter(Boolean).length;
-
-    if (selectedAdvances === 0) {
-      const autoSelections: Record<string, boolean> = {};
-      pendingAdvances.forEach(adv => {
-        // Auto-check only approved, un-deducted advances
-        if (!adv.isDeducted && adv.status === 'approved') {
-          autoSelections[adv.id] = true;
-          console.log(`✅ [AUTO-CHECK] ${adv.id}: ${adv.amount} LKR (status=${adv.status})`);
-        }
-      });
-
-      if (Object.keys(autoSelections).length > 0) {
-        console.log(`📊 [AUTO-SELECTIONS] Found ${Object.keys(autoSelections).length} un-deducted advances - auto-checking them`);
-        setDeductionSelections(autoSelections);
-      }
-    } else {
-      console.log(`📝 [AUTO-SELECTIONS SKIPPED] ${selectedAdvances} advances already selected`);
-    }
-  }, [pendingAdvances, isLoaded, deductionSelections]);
-
-  // Debug: log fetched advances
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      console.log(`📊 [PAYROLL DEBUG] Fetched advances: count=${pendingAdvances.length}`);
-      if (pendingAdvances.length > 0) {
-        pendingAdvances.forEach(a => {
-          console.log(`   → ${a.id}: emp=${a.employeeId}, amt=${a.amount}, status=${a.status}, deducted=${a.isDeducted}`);
-        });
-      } else {
-        console.log('   ❌ NO ADVANCES FOUND IN DATABASE');
-      }
-    }
-  }, [pendingAdvances]);
-
-  const hasPayrollGenerated = payrollRecords.length > 0;
-
-  // ---- BUILD MAPS ----
-
-  const employeeMap = useMemo(() => {
-    const map = new Map<string, UserProfile>();
-    employees.forEach(emp => {
-      map.set(emp.workerId || emp.uid, emp);
-      if (emp.workerId) map.set(emp.uid, emp);
+  const toggleDeduction = useCallback((advanceId: string) => {
+    // Flip the state the engine currently shows for this advance.
+    setSelections((prev) => {
+      const shown = result?.employees.flatMap((e) => e.advances).find((a) => a.id === advanceId)?.deduct ?? true;
+      return { ...prev, [advanceId]: !shown };
     });
-    return map;
-  }, [employees]);
-
-  const siteNameMap = useMemo(() => {
-    const map = new Map<string, string>();
-    map.set('transportation', 'Transportation Duties');
-    sites.forEach((site: WorkSite) => map.set(site.id, site.name));
-    return map;
-  }, [sites]);
-
-  // Group advances by employeeId
-  const advancesByEmployee = useMemo(() => {
-    const grouped = groupAdvancesByEmployee(pendingAdvances);
-    if (typeof window !== 'undefined' && grouped.size > 0) {
-      console.log('📊 [PAYROLL DEBUG] Advances grouped by employee:', {
-        mapSize: grouped.size,
-        entries: Array.from(grouped.entries()).map(([empId, advs]) => ({
-          employeeId: empId,
-          count: advs.length,
-          advances: advs.map(a => ({ id: a.id, amount: a.amount })),
-        })),
-      });
-    }
-    return grouped;
-  }, [pendingAdvances]);
-
-  // ---- TOGGLE EXPAND ----
-
-  const toggleWorkerExpanded = useCallback((workerId: string) => {
-    setExpandedWorkers(prev => {
+  }, [result]);
+  const toggleExpanded = useCallback((id: string) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(workerId)) next.delete(workerId);
-      else next.add(workerId);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   }, []);
 
-  // ---- ADVANCE DEDUCTION CHECKBOX ----
-
-  const toggleDeduction = useCallback((advanceId: string) => {
-    setDeductionSelections(prev => {
-      const currentValue = prev[advanceId] ?? true;
-      return {
-        ...prev,
-        [advanceId]: !currentValue,
-      };
-    });
-  }, []);
-
-  // ---- COMPUTE EMPLOYEE SUMMARIES (using domain engine) ----
-
-  const employeeSummaries = useMemo((): EmployeeWeekSummary[] => {
-    const entries = buildAttendanceEntries(weekAttendance, employeeMap);
-    const summaries = buildEmployeeSummaries(entries, employeeMap, siteNameMap, advancesByEmployee) as unknown as EmployeeWeekSummary[];
-
-    // DEBUG: Check what advances made it into summaries
-    if (typeof window !== 'undefined') {
-      const totalAdv = summaries.reduce((sum, e) => sum + e.advances.length, 0);
-      console.log(`📊 [EMPLOYEE SUMMARIES] Built ${summaries.length} summaries, total advances: ${totalAdv}`);
-      summaries.forEach(s => {
-        if (s.advances.length > 0) {
-          console.log(`   → ${s.employeeName}: ${s.advances.length} advances = ${s.advances.reduce((sum, a) => sum + a.amount, 0)} LKR`);
-        }
-      });
-    }
-
-    // Add driver attendance
-    for (const record of driverAttendance) {
-      const morningVal = record.morningPresent ?? record.present ?? false;
-      const eveningVal = record.eveningPresent ?? record.present ?? false;
-      if (!morningVal && !eveningVal) continue;
-
-      const emp = employeeMap.get(record.workerId);
-      if (!emp) continue;
-
-      // Find if this driver already has a summary
-      let summary = summaries.find(s => s.employeeId === record.workerId);
-      
-      if (!summary) {
-        summary = {
-          employeeId: emp.uid,
-          employeeName: emp.displayName || emp.email,
-          employeeRole: (emp.role || 'driver') as UserRole,
-          daysWorked: 0,
-          otHours: 0,
-          grossPay: 0,
-          dailyRate: emp.dailyRate || 0,
-          otRate: emp.otRate || 0,
-          siteBreakdowns: [],
-          advances: advancesByEmployee.get(emp.uid) || [],
-          loanDeductions: [],
-        };
-        summaries.push(summary);
-      }
-
-      // Find transportation site
-      let site = summary.siteBreakdowns.find(sb => sb.siteId === 'transportation');
-      if (!site) {
-        site = {
-          siteId: 'transportation',
-          siteName: 'Transportation Duties',
-          daysWorked: 0,
-          otHours: 0,
-          regularPay: 0,
-          otPay: 0,
-          totalPay: 0,
-        };
-        summary.siteBreakdowns.push(site);
-      }
-
-      let days = 0;
-      if (morningVal) days += 0.5;
-      if (eveningVal) days += 0.5;
-
-      const morningOtVal = record.morningOtHours ?? 0;
-      const eveningOtVal = record.eveningOtHours ?? 0;
-      const otHours = morningOtVal + eveningOtVal + (record.morningOtHours === undefined && record.eveningOtHours === undefined ? (record.otHours || 0) : 0);
-
-      site.daysWorked += days;
-      site.otHours += otHours;
-      site.regularPay = site.daysWorked * summary.dailyRate;
-      site.otPay = site.otHours * summary.otRate;
-      site.totalPay = site.regularPay + site.otPay;
-
-      // Update total summary
-      summary.daysWorked = summary.siteBreakdowns.reduce((s, b) => s + b.daysWorked, 0);
-      summary.otHours = summary.siteBreakdowns.reduce((s, b) => s + b.otHours, 0);
-      summary.grossPay = summary.siteBreakdowns.reduce((s, b) => s + b.totalPay, 0);
-    }
-
-    // Post-process summaries to calculate transport allowance and loan deductions
-    summaries.forEach((summary) => {
-      const emp = employeeMap.get(summary.employeeId);
-      if (emp) {
-        // Calculate transport allowance
-        const sitesCount = summary.siteBreakdowns.length;
-        let transportAllowance = 0;
-        if (emp.transportType && emp.transportType !== 'none' && emp.transportType !== 'company_vehicle') {
-          const tRate = emp.transportRate || 0;
-          const distance = emp.distance || 0;
-          const rateType = emp.transportRateType || 'per_day';
-          
-          if (rateType === 'per_km') {
-            transportAllowance = distance * tRate * summary.daysWorked;
-          } else if (rateType === 'per_day') {
-            transportAllowance = tRate * summary.daysWorked;
-          } else if (rateType === 'per_week') {
-            transportAllowance = tRate;
-          } else if (rateType === 'per_site') {
-            transportAllowance = tRate * sitesCount;
-          }
-        }
-        
-        summary.transportAllowance = transportAllowance;
-        
-        // Add transport allowance to grossPay
-        summary.grossPay += transportAllowance;
-        
-        // Get active loan deductions
-        const activeLoan = activeLoans.find((l: any) => l.employeeId === summary.employeeId);
-        const loanDeductions = [];
-        if (activeLoan) {
-          const deduction = Math.min(activeLoan.emiAmount, activeLoan.remainingAmount);
-          loanDeductions.push({
-            loanId: activeLoan.id,
-            emiNumber: activeLoan.paidEmis + 1,
-            emiAmount: deduction,
-            remainingAmount: activeLoan.remainingAmount - deduction,
-          });
-        }
-        summary.loanDeductions = loanDeductions;
-      }
-    });
-
-    return summaries.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
-  }, [weekAttendance, driverAttendance, employeeMap, siteNameMap, advancesByEmployee, activeLoans]);
-
-  // ---- SITE TOTALS (using domain engine) ----
-
-  const siteTotals = useMemo(() => {
-    // buildSiteTotals already computes accurate totalDays and totalOtHours
-    // Don't recalculate - they're already correct and include all merged/deduplicated data
-    return buildSiteTotals(employeeSummaries);
-  }, [employeeSummaries]);
-
-  // ---- SITE-WORKER SUMMARIES (for enhanced UI display) ----
-
-  const siteWorkerSummaries = useMemo(() => {
-    // Build site-worker breakdown for detailed summary display
-    // This is UI-only transformation - no payroll changes
-    return buildSiteWorkerSummaries(employeeSummaries);
-  }, [employeeSummaries]);
-
-  // ---- GRAND TOTALS (using domain engine) ----
-
-  const grandTotals = useMemo(() => {
-    const totalWorkers = employeeSummaries.length;
-    const totalDays = employeeSummaries.reduce((s, e) => s + e.daysWorked, 0);
-    const totalOtHours = employeeSummaries.reduce((s, e) => s + e.otHours, 0);
-    const grossPayroll = employeeSummaries.reduce((s, e) => s + e.grossPay, 0);
-
-    // Calculate deductions based on selections and active loans
-    let advanceDeductions = 0;
-    let loanDeductions = 0;
-    for (const emp of employeeSummaries) {
-      for (const adv of emp.advances) {
-        if (deductionSelections[adv.id] !== false) {
-          advanceDeductions += adv.amount;
-        }
-      }
-      if (emp.loanDeductions) {
-        for (const loan of emp.loanDeductions) {
-          loanDeductions += loan.emiAmount;
-        }
-      }
-    }
-    return buildGrandTotals(employeeSummaries, advanceDeductions, loanDeductions);
-  }, [employeeSummaries, deductionSelections]);
-
-  // ---- FILTER ----
-
-  const filteredSummaries = employeeSummaries.filter(s =>
-    (!searchQuery || s.employeeName.toLowerCase().includes(searchQuery.toLowerCase())) &&
-    s.grossPay > 0  // Hide workers with zero payment
-  );
-  const filteredPayroll = payrollRecords.filter(r =>
-    (!searchQuery || r.employeeName.toLowerCase().includes(searchQuery.toLowerCase())) &&
-    r.netPay > 0  // Hide workers with zero payment
-  );
-
-  // ---- MUTATIONS ----
-
   const generateMutation = useMutation({
-    mutationFn: async () => {
-      // Handle advance selections before generating payroll
-      for (const emp of employeeSummaries) {
-        for (const adv of emp.advances) {
-          if (deductionSelections[adv.id] === false) {
-            // Carry forward if explicitly unchecked
-            await markAdvanceCarriedForward(adv.id);
-          } else if (adv.carryForward) {
-            // Un-carry forward if checked but previously carried forward
-            await resetCarryForwardForWeek(adv.id);
-          }
-        }
-      }
-      
-      return generateWeeklyPayroll(weekStart, user?.uid || '');
-    },
+    mutationFn: () =>
+      generateWeeklyPayroll(
+        week.start,
+        { uid: profile!.uid, name: profile!.displayName || profile!.email, role: profile!.role as UserRole },
+        selections
+      ),
     onSuccess: (data) => {
       toast({
-        title: 'Payroll Generated',
-        description: `Generated payroll for ${data.success} employees.${data.failed > 0 ? ` ${data.failed} failed.` : ''}`,
+        title: 'Payroll approved',
+        description: `${data.success} employees stored${data.skipped ? `, ${data.skipped} already existed` : ''}${data.failed ? `, ${data.failed} failed: ${data.errors.join('; ')}` : ''}`,
+        variant: data.failed ? 'destructive' : undefined,
       });
-      setShowPreview(false);
-      setDeductionSelections({}); // Clear selections after successful generation
-      const key = `payroll-deductions-${weekStartStr}`;
-      localStorage.removeItem(key); // Clear from storage
+      setConfirming(false);
+      try { window.localStorage.removeItem(selectionKey(week.start)); } catch { /* ignore */ }
+      setSelections({});
       queryClient.invalidateQueries({ queryKey: ['weekly-payroll'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll-inputs'] });
+      queryClient.invalidateQueries({ queryKey: ['advances'] });
     },
-    onError: (error: any) => {
-      toast({ title: 'Error', description: error.message || 'Failed to generate payroll', variant: 'destructive' });
+    onError: (error: unknown) => {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to generate payroll', variant: 'destructive' });
     },
   });
 
   const markPaidMutation = useMutation({
-    mutationFn: (payrollId: string) => markAsPaid(payrollId, 'cash'),
+    mutationFn: (payrollId: string) => markAsPaid(payrollId, 'cash', profile?.uid),
     onSuccess: () => {
-      toast({ title: 'Marked as Paid' });
+      toast({ title: 'Marked as paid', description: 'Loan instalments recorded.' });
       queryClient.invalidateQueries({ queryKey: ['weekly-payroll'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll-inputs'] });
+    },
+    onError: (error: unknown) => {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed', variant: 'destructive' });
     },
   });
 
-  const approveMutation = useMutation({
-    mutationFn: (payrollId: string) => updatePayrollStatus(payrollId, 'approved'),
-    onSuccess: () => {
-      toast({ title: 'Approved' });
-      queryClient.invalidateQueries({ queryKey: ['weekly-payroll'] });
-    },
-  });
-
-  const navigateWeek = (direction: 'prev' | 'next') => {
-    setSelectedDate(current =>
-      direction === 'prev' ? subWeeks(current, 1) : addWeeks(current, 1)
-    );
-    setShowPreview(false);
-  };
-
-  const isLoading = loadingAttendance || loadingDriver || loadingPayroll;
+  const filtered = (result?.employees || []).filter(
+    (e) => !searchQuery || e.employeeName.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  const hasLegacyWeekRecords = storedRecords.some((r) => r.weekStartDate !== week.start);
+  const pendingEmployees = result?.employees.length || 0;
 
   if (!isAuthorized) return null;
 
   return (
     <div className="space-y-6">
-
-      {/* ========== SECTION 1: WEEK SELECTOR ========== */}
-      <div className="flex flex-col gap-3 sm:gap-4 md:flex-row md:items-center md:justify-between">
+      {/* ========== WEEK SELECTOR ========== */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Payroll</h1>
-          <p className="text-xs sm:text-sm text-muted-foreground">
-            Weekly salary tracking &mdash; Pay day every Saturday
+          <h1 className="text-xl font-bold text-foreground sm:text-2xl">Payroll</h1>
+          <p className="text-xs text-muted-foreground sm:text-sm">
+            Weekly payroll · Monday–Saturday, plus emergency Sunday work when marked
           </p>
         </div>
-
-        <div className="flex items-center gap-1 sm:gap-2 flex-wrap shrink-0">
-          <Button variant="outline" size="sm" onClick={() => navigateWeek('prev')} className="h-9 w-9 p-0 sm:h-10 sm:w-10">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setAnchorDate(addDaysISO(week.start, -7))} className="h-10 w-10 p-0" aria-label="Previous week">
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-1 rounded-md border border-border bg-background px-2 sm:px-3 py-1.5 text-xs sm:text-sm">
-            <span className="font-medium flex items-center gap-0.5 sm:gap-1">
-              <Calendar className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-              Week {weekNumber}
-            </span>
-            <span className="text-xs text-muted-foreground line-clamp-2">
-              ({formatDate(weekStart, 'DATE_SHORT')} - {formatDate(weekEnd, 'DATE_SHORT')})
+          <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium">Week {getWeekNumber(fromISODateString(week.start))}</span>
+            <span className="text-muted-foreground">
+              {formatDate(week.start, 'EEE dd/MM/yyyy')} – {formatDate(week.end, 'EEE dd/MM/yyyy')}
             </span>
           </div>
-          <Button variant="outline" size="sm" onClick={() => navigateWeek('next')} className="h-9 w-9 p-0 sm:h-10 sm:w-10">
+          <Button variant="outline" size="sm" onClick={() => setAnchorDate(addDaysISO(week.start, 7))} className="h-10 w-10 p-0" aria-label="Next week">
             <ChevronRight className="h-4 w-4" />
           </Button>
+          {week.start !== getPayrollWeek(todayISO()).start && (
+            <Button variant="ghost" size="sm" onClick={() => setAnchorDate(todayISO())}>This week</Button>
+          )}
         </div>
       </div>
 
-      {/* Status + Actions Bar */}
-      <Card>
-        <CardContent className="p-3 sm:p-4">
-          <div className="flex flex-col gap-2 sm:gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-              <div className={cn(
-                'inline-flex items-center gap-1.5 sm:gap-2 rounded-full border px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-medium',
-                hasPayrollGenerated
-                  ? 'border-green-500/30 bg-green-500/10 text-green-500'
-                  : 'border-blue-500/30 bg-blue-500/10 text-blue-500'
-              )}>
-                {hasPayrollGenerated ? (
-                  <><CheckCircle className="h-3 w-3 sm:h-4 sm:w-4" /> Payroll Generated</>
-                ) : (
-                  <><Clock className="h-3 w-3 sm:h-4 sm:w-4" /> Live Preview</>
-                )}
-              </div>
-              <span className="text-xs sm:text-sm text-muted-foreground">
-                {grandTotals.totalWorkers} workers
-              </span>
-            </div>
+      {inputsError && (
+        <Card className="border-red-500/40 bg-red-500/10">
+          <CardContent className="p-4 text-sm text-red-700 dark:text-red-300">Failed to load payroll data: {String((inputsError as Error).message || inputsError)}</CardContent>
+        </Card>
+      )}
 
-            {!hasPayrollGenerated && (
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2">
-                {!showPreview ? (
-                  <Button
-                    variant="outline"
-                    className="gap-2 text-xs sm:text-sm"
-                    size="sm"
-                    onClick={() => setShowPreview(true)}
-                    disabled={employeeSummaries.length === 0}
-                  >
-                    <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                    <span className="hidden sm:inline">Preview Payroll</span>
-                    <span className="sm:hidden">Preview</span>
-                  </Button>
-                ) : (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-xs sm:text-sm"
-                      onClick={() => setShowPreview(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      className="gap-2 text-xs sm:text-sm"
-                      size="sm"
-                      onClick={() => generateMutation.mutate()}
-                      disabled={generateMutation.isPending}
-                    >
-                      {generateMutation.isPending ? (
-                        <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
-                      ) : (
-                        <ShieldCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                      )}
-                      <span className="hidden sm:inline">Approve &amp; Generate</span>
-                      <span className="sm:hidden">Generate</span>
-                    </Button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {isLoading ? (
-        <div className="flex h-64 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
+      {loadingInputs || loadingStored || !result ? (
+        <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
       ) : (
         <>
-          {/* ========== SECTION 2: SITE SUMMARY CARDS ========== */}
-          {siteTotals.length > 0 && (
-            <div>
-              <h2 className="mb-2 sm:mb-3 text-base sm:text-lg font-semibold text-foreground">Site Summary</h2>
-              <div className="grid gap-2 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                {siteTotals.map((st) => (
-                  <SitePayrollCard
-                    key={st.siteId}
-                    siteId={st.siteId}
-                    siteName={st.siteName}
-                    workerCount={st.workerCount}
-                    totalDays={st.totalDays}
-                    totalOtHours={st.totalOtHours}
-                    totalPayroll={st.totalPayroll}
-                  />
-                ))}
+          {/* ========== STATUS / ACTIONS ========== */}
+          <Card>
+            <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                {storedRecords.length > 0 && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-green-500/40 bg-green-500/10 px-3 py-1 font-medium text-green-700 dark:text-green-400">
+                    <CheckCircle className="h-4 w-4" /> {storedRecords.length} approved record{storedRecords.length === 1 ? '' : 's'}
+                  </span>
+                )}
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/40 bg-blue-500/10 px-3 py-1 font-medium text-blue-700 dark:text-blue-400">
+                  <Info className="h-4 w-4" /> Live preview: {pendingEmployees} employee{pendingEmployees === 1 ? '' : 's'} not yet approved
+                </span>
               </div>
-            </div>
+              {pendingEmployees > 0 && (
+                confirming ? (
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <span className="text-sm text-muted-foreground">
+                      Approve {formatCurrency(result.totals.final)} for {pendingEmployees} employees? Ticked advances will be marked deducted.
+                    </span>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
+                      <Button size="sm" className="gap-2" onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending}>
+                        {generateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                        Approve &amp; store
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button size="sm" className="gap-2" onClick={() => setConfirming(true)}>
+                    <ShieldCheck className="h-4 w-4" /> Approve payroll
+                  </Button>
+                )
+              )}
+            </CardContent>
+          </Card>
+
+          {hasLegacyWeekRecords && (
+            <p className="text-xs text-muted-foreground">
+              Some stored records use the previous Sunday–Saturday week. Dates already paid in any stored record are excluded from this preview, so nothing is paid twice.
+            </p>
           )}
 
-          {/* ========== SECTION 3: WORKER PAYROLL CARDS ========== */}
+          {/* ========== OVERALL SUMMARY (preview) ========== */}
+          {pendingEmployees > 0 && <PayrollOverview totals={result.totals} />}
+
+          {/* ========== SITE SUMMARY ========== */}
+          <SiteTotalsTable sites={result.sites} />
+
+          {/* ========== EMPLOYEE SUMMARY ========== */}
           <div>
-            <div className="flex flex-col gap-2 sm:gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
-              <h2 className="text-base sm:text-lg font-semibold text-foreground">
-                {hasPayrollGenerated ? 'Payroll Records' : 'Worker Payroll'}
-              </h2>
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-base font-semibold text-foreground sm:text-lg">Employee payroll</h2>
               <div className="relative flex-1 sm:max-w-xs">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 text-sm"
-                />
+                <Input placeholder="Search employee…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 text-sm" />
               </div>
             </div>
-
             <Card>
               <CardContent className="p-0">
-                {hasPayrollGenerated ? (
-                  filteredPayroll.length === 0 ? (
-                    <div className="flex h-32 items-center justify-center text-muted-foreground">
-                      No matching records
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-border/50">
-                      {filteredPayroll.map((record) => (
-                        <PayrollRecordCard
-                          key={record.id}
-                          record={record}
-                          siteNameMap={siteNameMap}
-                          isExpanded={expandedWorkers.has(record.id)}
-                          onToggle={() => toggleWorkerExpanded(record.id)}
-                          onApprove={() => approveMutation.mutate(record.id)}
-                          onMarkPaid={() => markPaidMutation.mutate(record.id)}
-                          approvePending={approveMutation.isPending}
-                          markPaidPending={markPaidMutation.isPending}
-                        />
-                      ))}
-                    </div>
-                  )
+                {filtered.length === 0 ? (
+                  <div className="flex h-32 items-center justify-center p-4 text-center text-sm text-muted-foreground">
+                    {pendingEmployees === 0 ? 'No unpaid attendance in this week.' : 'No matching employees'}
+                  </div>
                 ) : (
-                  filteredSummaries.length === 0 ? (
-                    <div className="flex h-32 flex-col items-center justify-center gap-2 text-muted-foreground">
-                      <Users className="h-10 w-10" />
-                      <p>No attendance marked for this week yet</p>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-border/50">
-                      {filteredSummaries.map((emp) => (
-                        <WorkerPayrollCard
-                          key={emp.employeeId}
-                          summary={emp}
-                          isExpanded={expandedWorkers.has(emp.employeeId)}
-                          onToggle={() => toggleWorkerExpanded(emp.employeeId)}
-                          deductionSelections={deductionSelections}
-                          onToggleDeduction={toggleDeduction}
-                          showPreview={showPreview}
-                        />
-                      ))}
-                    </div>
-                  )
+                  <div className="divide-y divide-border">
+                    {filtered.map((e) => (
+                      <WorkerPayrollCard
+                        key={e.employeeId}
+                        summary={e}
+                        isExpanded={expanded.has(e.employeeId)}
+                        onToggle={() => toggleExpanded(e.employeeId)}
+                        onToggleDeduction={toggleDeduction}
+                      />
+                    ))}
+                  </div>
                 )}
               </CardContent>
             </Card>
           </div>
 
-          {/* ========== SECTION 4: PAYROLL SUMMARY ========== */}
-          {grandTotals.totalWorkers > 0 && (
-            <PayrollSummary
-              totalWorkers={grandTotals.totalWorkers}
-              totalDays={grandTotals.totalDays}
-              totalOtHours={grandTotals.totalOtHours}
-              grossPayroll={grandTotals.grossPayroll}
-              advanceDeductions={grandTotals.advanceDeductions}
-              loanDeductions={grandTotals.loanDeductions}
-              finalPayroll={grandTotals.finalPayroll}
-              siteTotals={siteTotals}
-              siteWorkerSummaries={siteWorkerSummaries}
+          {/* ========== GRAND TOTAL ========== */}
+          {pendingEmployees > 0 && <GrandTotalCard totals={result.totals} />}
+
+          {/* ========== STORED (APPROVED) RECORDS ========== */}
+          {storedRecords.length > 0 && (
+            <StoredPayrollList
+              records={storedRecords}
+              expanded={expanded}
+              onToggle={toggleExpanded}
+              onMarkPaid={(id) => markPaidMutation.mutate(id)}
+              markPaidPending={markPaidMutation.isPending}
             />
           )}
         </>
@@ -778,417 +276,91 @@ export default function PayrollPage() {
   );
 }
 
-
 // =====================================================
-// LIVE WORKER CARD — Collapsible
-// Collapsed: name, role, grand total
-// Expanded: site breakdown + advances + final salary
+// STORED PAYROLL RECORDS (approved / paid) — read-only snapshot
 // =====================================================
 
-function LiveWorkerCard({
-  summary,
-  isExpanded,
-  onToggle,
-  deductionSelections,
-  onToggleDeduction,
-  showPreview,
+function StoredPayrollList({
+  records, expanded, onToggle, onMarkPaid, markPaidPending,
 }: {
-  summary: EmployeeWeekSummary;
-  isExpanded: boolean;
-  onToggle: () => void;
-  deductionSelections: Record<string, boolean>;
-  onToggleDeduction: (advanceId: string) => void;
-  showPreview: boolean;
+  records: WeeklyPayroll[];
+  expanded: Set<string>;
+  onToggle: (id: string) => void;
+  onMarkPaid: (id: string) => void;
+  markPaidPending: boolean;
 }) {
-  // Calculate advance deduction for this worker based on checkbox state
-  const advanceDeduction = summary.advances.reduce(
-    (sum, adv) => (deductionSelections[adv.id] !== false ? sum + adv.amount : sum),
-    0
-  );
-  const finalSalary = summary.grossPay - advanceDeduction;
-
+  const total = records.reduce((s, r) => s + (Number(r.netPay) || 0), 0);
   return (
-    <div className="transition-colors hover:bg-muted/20">
-      {/* Collapsed header — click to expand */}
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center justify-between p-4 text-left"
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 font-medium text-primary">
-            {summary.employeeName.charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <p className="font-medium">{summary.employeeName}</p>
-            <div className="flex items-center gap-2">
-              <span className={cn(
-                'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
-                roleBadgeColors[summary.employeeRole]
-              )}>
-                {summary.employeeRole}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {formatCurrency(summary.dailyRate)}/day
-              </span>
-              {summary.siteBreakdowns.length > 1 && (
-                <span className="rounded bg-blue-500/20 px-1.5 py-0.5 text-xs text-blue-400">
-                  {summary.siteBreakdowns.length} sites
-                </span>
-              )}
-              {summary.advances.length > 0 && (
-                <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-xs text-red-400">
-                  Advance
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="text-right">
-            <p className="text-sm text-muted-foreground">
-              {summary.daysWorked} days{summary.otHours > 0 ? ` + ${summary.otHours.toFixed(1)}h OT` : ''}
-            </p>
-            {advanceDeduction > 0 && (
-              <p className="text-xs text-red-400">-{formatCurrency(advanceDeduction)} advance</p>
-            )}
-            <p className="text-lg font-bold text-green-500">
-              {formatCurrency(finalSalary)}
-            </p>
-          </div>
-          {isExpanded ? (
-            <ChevronUp className="h-5 w-5 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-5 w-5 text-muted-foreground" />
-          )}
-        </div>
-      </button>
-
-      {/* Expanded details */}
-      {isExpanded && (
-        <div className="border-t border-border/30 bg-muted/10 px-4 pb-4">
-
-          {/* Site breakdown */}
-          <div className="mt-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-              Site Breakdown
-            </p>
-            <div className="rounded-lg border border-border/50 overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-muted/30 text-left">
-                    <th className="p-2.5 font-medium text-muted-foreground">Site</th>
-                    <th className="p-2.5 text-center font-medium text-muted-foreground">Days</th>
-                    <th className="p-2.5 text-center font-medium text-muted-foreground">OT</th>
-                    <th className="p-2.5 text-right font-medium text-muted-foreground">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.siteBreakdowns.map((sb) => (
-                    <tr key={sb.siteId} className="border-t border-border/30">
-                      <td className="p-2.5">
-                        <div className="flex items-center gap-1.5">
-                          <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                          {sb.siteName}
+    <div>
+      <h2 className="mb-3 text-base font-semibold text-foreground sm:text-lg">Approved payroll records</h2>
+      <Card>
+        <CardContent className="p-0">
+          <div className="divide-y divide-border">
+            {records.map((r) => {
+              const isOpen = expanded.has(`stored-${r.id}`);
+              return (
+                <div key={r.id}>
+                  <div className="flex items-center justify-between gap-3 p-3 sm:p-4">
+                    <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => onToggle(`stored-${r.id}`)} aria-expanded={isOpen}>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">{r.employeeName}</p>
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                          <RoleBadge role={(r.employeeRole || 'helper') as UserRole} />
+                          <span className={cn('rounded-full px-2 py-0.5 font-medium capitalize', r.status === 'paid' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : 'bg-blue-500/15 text-blue-700 dark:text-blue-300')}>{r.status}</span>
+                          {r.weekStartDate !== records[0].weekStartDate && <span>legacy week</span>}
                         </div>
-                      </td>
-                      <td className="p-2.5 text-center">{sb.daysWorked}</td>
-                      <td className="p-2.5 text-center">
-                        {sb.otHours > 0 ? (
-                          <span className="text-orange-500">{sb.otHours.toFixed(1)}h</span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="p-2.5 text-right font-medium">{formatCurrency(sb.totalPay)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                {summary.siteBreakdowns.length > 1 && (
-                  <tfoot>
-                    <tr className="border-t-2 border-border bg-muted/30 font-bold">
-                      <td className="p-2.5">Total</td>
-                      <td className="p-2.5 text-center">{summary.daysWorked}</td>
-                      <td className="p-2.5 text-center">
-                        {summary.otHours > 0 ? `${summary.otHours.toFixed(1)}h` : '—'}
-                      </td>
-                      <td className="p-2.5 text-right text-blue-500">
-                        {formatCurrency(summary.grossPay)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
-            </div>
-          </div>
-
-          {/* Gross salary */}
-          <div className="mt-3 flex items-center justify-between rounded-lg bg-blue-500/5 border border-blue-500/20 px-4 py-2">
-            <span className="text-sm font-medium">Gross Salary</span>
-            <span className="font-bold text-blue-500">{formatCurrency(summary.grossPay)}</span>
-          </div>
-
-          {/* Advances section */}
-          {summary.advances.length > 0 && (
-            <div className="mt-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                Advances
-              </p>
-              <div className="space-y-2">
-                {summary.advances.map((adv) => (
-                  <div
-                    key={adv.id}
-                    className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2.5"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 text-sm">
-                          <AlertCircle className="h-4 w-4 text-red-400" />
-                          <span className="font-medium text-red-400">
-                            {formatCurrency(adv.amount)}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground ml-6">
-                          {adv.requestedAt
-                            ? formatDate(adv.requestedAt instanceof Date ? adv.requestedAt : new Date(adv.requestedAt))
-                            : '—'}
-                          {adv.reason ? ` — ${adv.reason}` : ''}
-                        </p>
                       </div>
-
-                      {/* Deduct checkbox — CEO control */}
-                      {(showPreview || !showPreview) && (
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={deductionSelections[adv.id] ?? true}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              onToggleDeduction(adv.id);
-                            }}
-                            className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
-                          />
-                          <span className="text-xs font-medium whitespace-nowrap">
-                            Deduct This Week
-                          </span>
-                        </label>
+                      {isOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-foreground">{formatCurrency(r.netPay)}</p>
+                      {r.status !== 'paid' && (
+                        <Button size="sm" variant="outline" className="gap-1" onClick={() => onMarkPaid(r.id)} disabled={markPaidPending}>
+                          <Wallet className="h-3.5 w-3.5" /> Mark paid
+                        </Button>
                       )}
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Final salary — highlighted */}
-          <div className="mt-3 flex items-center justify-between rounded-lg bg-green-500/10 border-2 border-green-500/30 px-4 py-3">
-            <span className="font-semibold">Final Salary</span>
-            <div className="text-right">
-              {advanceDeduction > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {formatCurrency(summary.grossPay)} - {formatCurrency(advanceDeduction)}
-                </p>
-              )}
-              <span className="text-xl font-bold text-green-500">
-                {formatCurrency(finalSalary)}
-              </span>
-            </div>
-          </div>
-
-          {advanceDeduction === 0 && summary.advances.length > 0 && (
-            <p className="mt-2 text-xs text-muted-foreground italic">
-              Advance will carry forward to next week
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-// =====================================================
-// PAYROLL RECORD CARD (saved payroll - collapsible)
-// =====================================================
-
-function PayrollRecordCard({
-  record,
-  siteNameMap,
-  isExpanded,
-  onToggle,
-  onApprove,
-  onMarkPaid,
-  approvePending,
-  markPaidPending,
-}: {
-  record: WeeklyPayroll;
-  siteNameMap: Map<string, string>;
-  isExpanded: boolean;
-  onToggle: () => void;
-  onApprove: () => void;
-  onMarkPaid: () => void;
-  approvePending: boolean;
-  markPaidPending: boolean;
-}) {
-  return (
-    <div className="transition-colors hover:bg-muted/20">
-      {/* Collapsed header */}
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center justify-between p-4 text-left"
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 font-medium text-primary">
-            {record.employeeName.charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <p className="font-medium">{record.employeeName}</p>
-            <div className="flex items-center gap-2">
-              <span className={cn(
-                'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
-                roleBadgeColors[record.employeeRole || 'helper']
-              )}>
-                {record.employeeRole || 'Employee'}
-              </span>
-              <span className={cn(
-                'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium',
-                statusConfig[record.status].color
-              )}>
-                {statusConfig[record.status].icon}
-                {statusConfig[record.status].label}
-              </span>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="text-right">
-            <p className="text-sm text-muted-foreground">
-              {record.daysWorked} days
-              {record.overtimeHours > 0 ? ` + ${record.overtimeHours.toFixed(1)}h OT` : ''}
-            </p>
-            {record.totalDeductions > 0 && (
-              <p className="text-xs text-red-400">
-                -{formatCurrency(record.totalDeductions)} deductions
-              </p>
-            )}
-            <p className="text-lg font-bold text-green-500">
-              {formatCurrency(record.netPay)}
-            </p>
-          </div>
-          {isExpanded ? (
-            <ChevronUp className="h-5 w-5 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-5 w-5 text-muted-foreground" />
-          )}
-        </div>
-      </button>
-
-      {/* Expanded detail */}
-      {isExpanded && (
-        <div className="border-t border-border/30 bg-muted/10 px-4 pb-4">
-          {/* Site breakdown */}
-          {record.siteBreakdowns && record.siteBreakdowns.length > 0 && (
-            <div className="mt-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                Site Breakdown
-              </p>
-              <div className="rounded-lg border border-border/50 overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-muted/30 text-left">
-                      <th className="p-2.5 font-medium text-muted-foreground">Site</th>
-                      <th className="p-2.5 text-center font-medium text-muted-foreground">Days</th>
-                      <th className="p-2.5 text-center font-medium text-muted-foreground">OT</th>
-                      <th className="p-2.5 text-right font-medium text-muted-foreground">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {record.siteBreakdowns.map((sb) => (
-                      <tr key={sb.siteId} className="border-t border-border/30">
-                        <td className="p-2.5">
-                          <div className="flex items-center gap-1.5">
-                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                            {siteNameMap.get(sb.siteId) || sb.siteName || sb.siteId}
-                          </div>
-                        </td>
-                        <td className="p-2.5 text-center">{sb.daysWorked}</td>
-                        <td className="p-2.5 text-center">
-                          {sb.otHours > 0 ? (
-                            <span className="text-orange-500">{sb.otHours.toFixed(1)}h</span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </td>
-                        <td className="p-2.5 text-right font-medium">{formatCurrency(sb.totalPay)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 border-border bg-muted/30 font-bold">
-                      <td className="p-2.5">Total</td>
-                      <td className="p-2.5 text-center">{record.daysWorked}</td>
-                      <td className="p-2.5 text-center">
-                        {record.overtimeHours > 0 ? `${record.overtimeHours.toFixed(1)}h` : '-'}
-                      </td>
-                      <td className="p-2.5 text-right text-blue-500">
-                        {formatCurrency(record.totalEarnings)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Deductions */}
-          {record.totalDeductions > 0 && (
-            <div className="mt-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                Deductions
-              </p>
-              <div className="space-y-1.5">
-                {record.advances.map((adv) => (
-                  <div key={adv.advanceId} className="flex items-center justify-between rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm">
-                    <div className="flex items-center gap-2">
-                      <AlertCircle className="h-4 w-4 text-red-400" />
-                      <span>Advance: {adv.description}</span>
+                  {isOpen && (
+                    <div className="space-y-2 border-t border-border bg-muted/20 p-3 text-xs sm:text-sm">
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[420px]">
+                          <thead>
+                            <tr className="text-left text-muted-foreground">
+                              <th className="p-1.5 font-medium">Site</th><th className="p-1.5 text-right font-medium">Days/Visits</th>
+                              <th className="p-1.5 text-right font-medium">OT h</th><th className="p-1.5 text-right font-medium">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(r.siteBreakdowns || []).map((sb) => (
+                              <tr key={sb.siteId} className="border-t border-border/60">
+                                <td className="p-1.5">{sb.siteName || sb.siteId}</td>
+                                <td className="p-1.5 text-right">{(sb as { visits?: number }).visits || sb.daysWorked}</td>
+                                <td className="p-1.5 text-right">{sb.otHours}</td>
+                                <td className="p-1.5 text-right">{formatCurrency(sb.totalPay)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p>Gross {formatCurrency(r.totalEarnings)} (transport {formatCurrency(r.transportAllowance || 0)}) − advances {formatCurrency((r.advances || []).reduce((s, a) => s + a.amount, 0))} − loans {formatCurrency((r.loanDeductions || []).reduce((s, l) => s + l.emiAmount, 0))} = <strong>{formatCurrency(r.netPay)}</strong></p>
+                      {(r.advances || []).length > 0 && (
+                        <p className="text-muted-foreground">Advances deducted: {(r.advances || []).map((a) => `${formatCurrency(a.amount)}${(a as { date?: string }).date ? ` (${formatDate((a as { date?: string }).date!, 'dd/MM/yyyy')})` : ''}`).join(', ')}</p>
+                      )}
+                      {((r as { anomalies?: string[] }).anomalies || []).map((m) => (
+                        <p key={m} className="flex items-center gap-1 text-amber-700 dark:text-amber-400"><AlertTriangle className="h-3 w-3 shrink-0" /> {m}</p>
+                      ))}
                     </div>
-                    <span className="font-medium text-red-400">-{formatCurrency(adv.amount)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Final salary */}
-          <div className="mt-3 flex items-center justify-between rounded-lg bg-green-500/10 border-2 border-green-500/30 px-4 py-3">
-            <span className="font-semibold">Final Salary</span>
-            <span className="text-xl font-bold text-green-500">
-              {formatCurrency(record.netPay)}
-            </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
-
-          {/* Actions */}
-          <div className="mt-3 flex items-center gap-2">
-            {record.status === 'draft' && (
-              <Button variant="outline" size="sm" className="gap-1" onClick={onApprove} disabled={approvePending}>
-                <CheckCircle className="h-3.5 w-3.5" /> Approve
-              </Button>
-            )}
-            {record.status === 'approved' && (
-              <Button variant="outline" size="sm" className="gap-1 text-green-500 hover:text-green-400" onClick={onMarkPaid} disabled={markPaidPending}>
-                <Wallet className="h-3.5 w-3.5" /> Mark Paid
-              </Button>
-            )}
-            {record.status === 'paid' && (
-              <span className="text-xs text-green-500">&#10003; Paid</span>
-            )}
+          <div className="flex justify-between border-t border-border p-3 text-sm font-semibold text-foreground sm:p-4">
+            <span>Approved total</span><span>{formatCurrency(total)}</span>
           </div>
-        </div>
-      )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
-

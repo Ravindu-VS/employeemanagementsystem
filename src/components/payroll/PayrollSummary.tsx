@@ -2,243 +2,126 @@
 
 /**
  * =====================================================
- * PAYROLL SUMMARY
+ * PAYROLL SUMMARY — overall totals + site totals
  * =====================================================
- * Displays grand payroll totals and site-wise breakdown with collapsible worker details.
+ * Displays PayrollEngineResult.totals and .sites. No calculation here.
+ * Grand total identity shown to the user:
+ *   Site totals + Driver duty + Transport = Gross
+ *   Gross − Advances − Loans = Final payroll
  */
 
-import { useState } from 'react';
-import { Building2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Building2, Users, Clock, Truck, Wallet } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrency, cn } from '@/lib/utils';
-import type { SiteWorkerSummary } from '@/domain/payroll/site-workers';
+import type { PayrollTotals, SitePayrollTotal } from '@/domain/payroll';
 
-interface SiteTotal {
-  siteId: string;
-  siteName: string;
-  totalDays: number;
-  totalOtHours: number;
-  totalPayroll: number;
+const num = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+
+export function PayrollOverview({ totals }: { totals: PayrollTotals }) {
+  const items = [
+    { label: 'Employees', value: String(totals.employees), icon: Users },
+    { label: 'Total days', value: `${num(totals.days)}${totals.visits ? ` + ${totals.visits} visits` : ''}`, icon: Clock },
+    { label: 'Total OT', value: `${num(totals.otHours)} h`, icon: Clock },
+    { label: 'Gross', value: formatCurrency(totals.gross), icon: Wallet },
+    { label: 'Transport', value: formatCurrency(totals.transport), icon: Truck },
+    { label: 'Advances', value: `− ${formatCurrency(totals.advances)}`, icon: Wallet },
+    { label: 'Loans', value: `− ${formatCurrency(totals.loans)}`, icon: Wallet },
+    { label: 'Final payroll', value: formatCurrency(totals.final), icon: Wallet, strong: true },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4">
+      {items.map((it) => (
+        <Card key={it.label} className={cn(it.strong && 'border-primary/50 bg-primary/5')}>
+          <CardContent className="p-3 sm:p-4">
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><it.icon className="h-3.5 w-3.5" /> {it.label}</p>
+            <p className={cn('mt-1 truncate text-base font-bold text-foreground sm:text-lg', it.strong && 'text-primary')}>{it.value}</p>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
 }
 
-interface PayrollSummaryProps {
-  totalWorkers: number;
-  totalDays: number;
-  totalOtHours: number;
-  grossPayroll: number;
-  advanceDeductions: number;
-  loanDeductions?: number;
-  finalPayroll: number;
-  siteTotals: SiteTotal[];
-  siteWorkerSummaries?: SiteWorkerSummary[]; // Optional: if provided, shows worker details under each site
-}
-
-export function PayrollSummary({
-  totalWorkers,
-  totalDays,
-  totalOtHours,
-  grossPayroll,
-  advanceDeductions,
-  loanDeductions = 0,
-  finalPayroll,
-  siteTotals,
-  siteWorkerSummaries,
-}: PayrollSummaryProps) {
-  const [expandedSites, setExpandedSites] = useState<Set<string>>(new Set());
-
-  const toggleSiteExpanded = (siteId: string) => {
-    setExpandedSites(prev => {
-      const next = new Set(prev);
-      if (next.has(siteId)) {
-        next.delete(siteId);
-      } else {
-        next.add(siteId);
-      }
-      return next;
-    });
-  };
+export function SiteTotalsTable({ sites }: { sites: SitePayrollTotal[] }) {
+  if (sites.length === 0) return null;
+  const total = sites.reduce((s, x) => s + x.total, 0);
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg">Payroll Summary</CardTitle>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base"><Building2 className="h-4 w-4" /> Site summary</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Grand totals grid */}
-        <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-7">
-          <div className="rounded-lg border border-border p-2 sm:p-3 text-center">
-            <p className="text-lg sm:text-xl md:text-2xl font-bold">{totalWorkers}</p>
-            <p className="text-xs sm:text-sm text-muted-foreground">Workers</p>
-          </div>
-          <div className="rounded-lg border border-border p-2 sm:p-3 text-center">
-            <p className="text-lg sm:text-xl md:text-2xl font-bold">{totalDays.toFixed(1)}</p>
-            <p className="text-xs sm:text-sm text-muted-foreground">Total Days</p>
-          </div>
-          <div className="rounded-lg border border-border p-2 sm:p-3 text-center">
-            <p className="text-lg sm:text-xl md:text-2xl font-bold text-orange-500">{totalOtHours.toFixed(1)}h</p>
-            <p className="text-xs sm:text-sm text-muted-foreground">Total OT</p>
-          </div>
-          <div className="rounded-lg border border-border p-2 sm:p-3 text-center">
-            <p className="text-lg sm:text-xl md:text-2xl font-bold text-blue-500">{formatCurrency(grossPayroll)}</p>
-            <p className="text-xs sm:text-sm text-muted-foreground">Gross</p>
-          </div>
-          <div className="rounded-lg border border-border p-2 sm:p-3 text-center">
-            <p className="text-lg sm:text-xl md:text-2xl font-bold text-red-400">{formatCurrency(advanceDeductions)}</p>
-            <p className="text-xs sm:text-sm text-muted-foreground">Advance</p>
-          </div>
-          <div className="rounded-lg border border-border p-2 sm:p-3 text-center">
-            <p className="text-lg sm:text-xl md:text-2xl font-bold text-orange-400">{formatCurrency(loanDeductions)}</p>
-            <p className="text-xs sm:text-sm text-muted-foreground">Loan</p>
-          </div>
-          <div className="rounded-lg border-2 border-green-500/30 bg-green-500/5 p-2 sm:p-3 text-center">
-            <p className="text-lg sm:text-xl md:text-2xl font-bold text-green-500">{formatCurrency(finalPayroll)}</p>
-            <p className="text-xs sm:text-sm text-muted-foreground">Final</p>
-          </div>
+      <CardContent className="p-0 sm:p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[620px] text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-muted-foreground">
+                <th className="p-3 font-medium">Site</th>
+                <th className="p-3 text-right font-medium">Employees</th>
+                <th className="p-3 text-right font-medium">Days</th>
+                <th className="p-3 text-right font-medium">Visits</th>
+                <th className="p-3 text-right font-medium">OT h</th>
+                <th className="p-3 text-right font-medium">Site salary</th>
+                <th className="p-3 text-right font-medium">OT pay</th>
+                <th className="p-3 text-right font-medium">Site total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sites.map((s) => (
+                <tr key={s.siteId} className="border-b border-border/60">
+                  <td className="p-3 font-medium text-foreground">{s.siteName}</td>
+                  <td className="p-3 text-right">{s.employeeCount}</td>
+                  <td className="p-3 text-right">{num(s.days)}</td>
+                  <td className="p-3 text-right">{s.visits}</td>
+                  <td className="p-3 text-right">{num(s.otHours)}</td>
+                  <td className="p-3 text-right">{formatCurrency(s.normalPay)}</td>
+                  <td className="p-3 text-right">{formatCurrency(s.otPay)}</td>
+                  <td className="p-3 text-right font-semibold text-foreground">{formatCurrency(s.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="font-semibold text-foreground">
+                <td className="p-3" colSpan={7}>All sites grand total</td>
+                <td className="p-3 text-right">{formatCurrency(total)}</td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
 
-        {/* Site breakdown table/cards */}
-        {siteTotals.length > 0 && (
-          <div className="mt-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-              Site Wise Breakdown
-            </p>
-
-            {/* Enhanced view with worker details if available */}
-            {siteWorkerSummaries && siteWorkerSummaries.length > 0 ? (
-              <div className="space-y-3">
-                {siteWorkerSummaries.map((site) => {
-                  const isExpanded = expandedSites.has(site.siteId);
-                  return (
-                    <div key={site.siteId} className="rounded-lg border border-border/50 overflow-hidden">
-                      {/* Clickable Site header with dropdown icon */}
-                      <button
-                        type="button"
-                        onClick={() => toggleSiteExpanded(site.siteId)}
-                        className="w-full px-3 py-2.5 bg-muted/30 hover:bg-muted/40 transition-colors flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-primary" />
-                          <span className="font-semibold text-foreground">{site.siteName}</span>
-                          <span className="text-xs text-muted-foreground ml-1">
-                            ({site.workers.filter(w => w.totalSalary > 0).length} {site.workers.filter(w => w.totalSalary > 0).length === 1 ? 'worker' : 'workers'})
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm font-semibold text-green-500">
-                            {formatCurrency(site.totalSalary)}
-                          </span>
-                          {isExpanded ? (
-                            <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                          )}
-                        </div>
-                      </button>
-
-                      {/* Expandable Workers section - filter out zero payment workers */}
-                      {isExpanded && site.workers.length > 0 && (
-                        <div className="divide-y divide-border/30">
-                          {site.workers
-                            .filter((worker) => worker.totalSalary > 0)
-                            .map((worker) => (
-                            <div key={worker.workerId} className="px-3 py-2.5 text-sm hover:bg-muted/5">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex-1 flex items-center gap-2">
-                                  <span className="font-medium text-foreground">{worker.workerName}</span>
-                                  {worker.role && (
-                                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-muted/50 text-muted-foreground capitalize">
-                                      {worker.role}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-3 text-right">
-                                  <span className="text-muted-foreground text-xs min-w-16">
-                                    {worker.daysWorked.toFixed(1)} days
-                                  </span>
-                                  <span className="font-semibold text-foreground min-w-28">
-                                    {formatCurrency(worker.totalSalary)}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Site total row */}
-                      {isExpanded && (
-                        <div className="bg-muted/20 px-3 py-2 text-xs font-medium border-t border-border/30">
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Site Total</span>
-                            <div className="flex items-center gap-3">
-                              <span className="text-muted-foreground">
-                                {site.totalDays.toFixed(1)} days
-                              </span>
-                              <span className="text-green-500 font-semibold min-w-28">
-                                {formatCurrency(site.totalSalary)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              /* Fallback to original table view if no worker details available */
-              <div className="rounded-lg border border-border/50 overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-muted/30">
-                      <th className="p-2.5 text-left font-medium text-muted-foreground">Site</th>
-                      <th className="p-2.5 text-center font-medium text-muted-foreground">Workers</th>
-                      <th className="p-2.5 text-center font-medium text-muted-foreground">Days</th>
-                      <th className="p-2.5 text-center font-medium text-muted-foreground">OT Hours</th>
-                      <th className="p-2.5 text-right font-medium text-muted-foreground">Salary</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {siteTotals.map((st) => (
-                      <tr key={st.siteId} className="border-t border-border/30 hover:bg-muted/10">
-                        <td className="p-2.5">
-                          <div className="flex items-center gap-1.5">
-                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span className="font-medium">{st.siteName}</span>
-                          </div>
-                        </td>
-                        <td className="p-2.5 text-center">-</td>
-                        <td className="p-2.5 text-center">{st.totalDays.toFixed(1)}</td>
-                        <td className="p-2.5 text-center">
-                          {st.totalOtHours > 0 ? (
-                            <span className="text-orange-500 font-medium">{st.totalOtHours.toFixed(1)}h</span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </td>
-                        <td className="p-2.5 text-right font-semibold text-green-500">
-                          {formatCurrency(st.totalPayroll)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  {siteTotals.length > 1 && (
-                    <tfoot>
-                      <tr className="border-t-2 border-border bg-muted/30 font-bold">
-                        <td className="p-2.5">Total</td>
-                        <td className="p-2.5 text-center">-</td>
-                        <td className="p-2.5 text-center">{siteTotals.reduce((sum, s) => sum + s.totalDays, 0).toFixed(1)}</td>
-                        <td className="p-2.5 text-center text-orange-500">{siteTotals.reduce((sum, s) => sum + s.totalOtHours, 0).toFixed(1)}h</td>
-                        <td className="p-2.5 text-right text-blue-500">
-                          {formatCurrency(siteTotals.reduce((sum, s) => sum + s.totalPayroll, 0))}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
-              </div>
-            )}
+export function GrandTotalCard({ totals }: { totals: PayrollTotals }) {
+  const rows: Array<[string, number, 'plus' | 'minus' | 'eq']> = [
+    ['All sites (labor + supervisor)', totals.siteTotal, 'plus'],
+    ['Driver duty', totals.driverTotal, 'plus'],
+    ['Transport', totals.transport, 'plus'],
+    ['Gross payroll', totals.gross, 'eq'],
+    ['Advance deductions', totals.advances, 'minus'],
+    ['Loan deductions', totals.loans, 'minus'],
+  ];
+  return (
+    <Card className="border-primary/40">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Grand total — all employees, all sites</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <dl className="space-y-1 text-sm">
+          {rows.map(([label, v, kind]) => (
+            <div key={label} className={cn('flex justify-between gap-3', kind === 'eq' && 'border-t border-border pt-1 font-semibold text-foreground')}>
+              <dt>{kind === 'minus' ? '− ' : kind === 'plus' ? '+ ' : ''}{label}</dt>
+              <dd className={cn('tabular-nums', kind === 'minus' && v > 0 && 'text-red-600 dark:text-red-400')}>{formatCurrency(v)}</dd>
+            </div>
+          ))}
+          <div className="flex justify-between gap-3 border-t-2 border-primary/40 pt-2 text-lg font-bold text-primary">
+            <dt>= Final payroll</dt>
+            <dd className="tabular-nums">{formatCurrency(totals.final)}</dd>
           </div>
-        )}
+          {totals.carriedForward > 0 && (
+            <p className="pt-1 text-xs text-muted-foreground">Advances carried forward (not deducted this week): {formatCurrency(totals.carriedForward)}</p>
+          )}
+        </dl>
       </CardContent>
     </Card>
   );

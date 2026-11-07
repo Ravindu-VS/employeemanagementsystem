@@ -30,7 +30,10 @@ import {
   where,
   orderBy,
 } from '@/lib/firebase/firestore';
-import { COLLECTIONS, PAYROLL_CONFIG } from '@/constants';
+import { COLLECTIONS } from '@/constants';
+import { toISODateString } from '@/lib/date-utils';
+import { isAdvanceDeducted } from '@/domain/advances';
+import { auditAction } from './audit-service';
 import type {
   AdvanceRequest,
   RequestStatus,
@@ -101,6 +104,11 @@ export async function getAllPendingAdvances(): Promise<AdvanceRequest[]> {
  * Get PENDING advances (awaiting approval)
  * Used by admin/approvals page
  */
+/** Every advance document (admin advance page). */
+export async function getAllAdvances(): Promise<AdvanceRequest[]> {
+  return getDocuments<AdvanceRequest>(COLLECTIONS.ADVANCES);
+}
+
 export async function getPendingAdvances(): Promise<AdvanceRequest[]> {
   return getDocuments<AdvanceRequest>(COLLECTIONS.ADVANCES, [
     where('status', '==', 'pending'),
@@ -190,16 +198,21 @@ export async function createAdvanceRequest(
     employeeName: data.employeeName,
     amount: data.amount,
     reason: data.reason,
+    // Advance date: Colombo calendar date anchored at noon (timezone-safe)
     requestedAt: data.requestedAt
-      ? new Date(data.requestedAt + 'T12:00:00')
+      ? new Date(data.requestedAt + 'T12:00:00+05:30')
       : new Date(),
+    advanceDate: data.requestedAt || toISODateString(new Date()),
     status: 'pending',
     deductThisWeek: true,
     isDeducted: false,
+    deducted: false,
     carryForward: false,
-  };
+  } as Omit<AdvanceRequest, 'id' | 'createdAt' | 'updatedAt'>;
 
-  return createDocument<AdvanceRequest>(COLLECTIONS.ADVANCES, advanceData as any);
+  const id = await createDocument<AdvanceRequest>(COLLECTIONS.ADVANCES, advanceData as any);
+  await auditAction('create', 'advances', id, { newValue: { employeeId: data.employeeId, amount: data.amount, date: advanceData.advanceDate } });
+  return id;
 }
 
 /**
@@ -234,6 +247,7 @@ export async function approveAdvance(
   }
 
   await updateDocument<AdvanceRequest>(COLLECTIONS.ADVANCES, advanceId, updateData);
+  await auditAction('approve', 'advances', advanceId, { newValue: { employeeId: advance.employeeId, amount: advance.amount, status: 'approved' } });
 }
 
 /**
@@ -266,6 +280,7 @@ export async function rejectAdvance(
     reviewedAt: new Date(),
     reviewNotes: notes,
   });
+  await auditAction('reject', 'advances', advanceId, { newValue: { employeeId: advance.employeeId, amount: advance.amount, reason: notes } });
 }
 
 /**
@@ -313,7 +328,7 @@ export async function markAdvanceDeducted(
   }
 
   // Check if already deducted (handle both field names)
-  const isDed = (advance as any).isDeducted || (advance as any).deducted || false;
+  const isDed = isAdvanceDeducted(advance);
   if (isDed) {
     // Already deducted - no-op
     return;
@@ -322,6 +337,7 @@ export async function markAdvanceDeducted(
   // Update to new field names
   await updateDocument<AdvanceRequest>(COLLECTIONS.ADVANCES, advanceId, {
     isDeducted: true,
+    deducted: true, // both legacy flags, so no query ever re-offers it
     deductionWeekId: weekStartDate,
     deductedWeek: weekStartDate,
     carryForward: false,
@@ -355,7 +371,7 @@ export async function getAdvanceStats(): Promise<{
   const advances = await getDocuments<AdvanceRequest>(COLLECTIONS.ADVANCES);
 
   const pending = advances.filter(a => a.status === 'pending');
-  const approved = advances.filter(a => a.status === 'approved' && !a.isDeducted);
+  const approved = advances.filter(a => a.status === 'approved' && !isAdvanceDeducted(a));
   const rejected = advances.filter(a => a.status === 'rejected');
 
   return {
@@ -421,17 +437,24 @@ export async function checkDuplicatePendingAdvance(employeeId: string): Promise<
 /**
  * @deprecated Use specific update functions instead
  */
-export async function updateAdvanceRequest(advanceId: string, data: any): Promise<void> {
-  data.updatedAt = new Date().toISOString();
+export async function updateAdvanceRequest(advanceId: string, data: Partial<AdvanceRequest>): Promise<void> {
+  const advance = await getAdvance(advanceId);
+  if (!advance) throw new Error('Advance not found');
+  if (isAdvanceDeducted(advance)) throw new Error('This advance was already deducted in payroll and cannot be edited');
   await updateDocument(COLLECTIONS.ADVANCES, advanceId, data);
+  await auditAction('update', 'advances', advanceId, { oldValue: { amount: advance.amount, reason: advance.reason }, newValue: data as Record<string, unknown> });
 }
 
 /**
  * @deprecated Use soft deletes via status instead
  */
 export async function deleteAdvance(advanceId: string): Promise<void> {
-  const { deleteDocument } = require('@/lib/firebase/firestore');
+  const advance = await getAdvance(advanceId);
+  if (!advance) return;
+  if (isAdvanceDeducted(advance)) throw new Error('This advance was already deducted in payroll and cannot be deleted');
+  const { deleteDocument } = await import('@/lib/firebase/firestore');
   await deleteDocument(COLLECTIONS.ADVANCES, advanceId);
+  await auditAction('delete', 'advances', advanceId, { oldValue: { employeeId: advance.employeeId, amount: advance.amount, status: advance.status } });
 }
 
 /**
