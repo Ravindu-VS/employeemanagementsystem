@@ -59,7 +59,3 @@ export {
   uploadPayslip,
   generateFileName,
 } from './storage';
-
-// Admin exports (server-side only)
-// Note: Only import these in server components or API routes
-// export { adminAuth, adminDb, adminStorage, isAdminInitialized } from './admin';

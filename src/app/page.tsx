@@ -254,7 +254,7 @@ export default function HomePage() {
                 <Building2 className="w-4 h-4 text-white" />
               </div>
               <span className="text-slate-400 text-sm">
-                © {new Date().getFullYear()} WorkForceX — KK & SONS Architectural Services
+                © {new Date().getFullYear()} KK & SONS Architectural Services. All rights reserved.
               </span>
             </div>
             <div className="flex gap-6 text-sm text-slate-400">

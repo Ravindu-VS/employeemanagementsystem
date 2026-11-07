@@ -11,7 +11,10 @@
     "lint": "next lint",
     "lint:fix": "next lint --fix",
     "type-check": "tsc --noEmit",
-    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "test:rules": "npx -y firebase-tools@13 emulators:exec --only firestore --project kk-sons-rules-test \"vitest run --config vitest.rules.config.mts\""
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -36,7 +39,6 @@
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.5.1",
     "firebase": "^10.14.1",
-    "firebase-admin": "^12.7.0",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",
     "lucide-react": "^0.468.0",
@@ -56,6 +58,7 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
@@ -66,7 +69,8 @@
     "prettier": "^3.4.2",
     "prettier-plugin-tailwindcss": "^0.6.9",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.9"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -14,8 +14,8 @@ const inter = Inter({
 // Metadata configuration
 export const metadata: Metadata = {
   title: {
-    default: "WorkForceX — Admin Dashboard",
-    template: "%s | WorkForceX",
+    default: "KK & SONS Architectural Services — Workforce Management",
+    template: "%s | KK & SONS Architectural Services",
   },
   description:
     "Enterprise Workforce Management Platform for KK & SONS Architectural Services",
