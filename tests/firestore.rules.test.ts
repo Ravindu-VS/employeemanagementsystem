@@ -110,8 +110,9 @@ describe('leave, notifications, transport', () => {
   });
   it('notifications: own or role-addressed only; can only mark read', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'notifications/n1'), { userId: 'helper', title: 't', isRead: false });
-      await setDoc(doc(ctx.firestore(), 'notifications/n2'), { userId: 'role:manager', title: 't', isRead: false });
+      const db = ctx.firestore(); // get the admin instance once per context
+      await setDoc(doc(db, 'notifications/n1'), { userId: 'helper', title: 't', isRead: false });
+      await setDoc(doc(db, 'notifications/n2'), { userId: 'role:manager', title: 't', isRead: false });
     });
     await assertSucceeds(getDoc(doc(as('helper'), 'notifications/n1')));
     await assertFails(getDoc(doc(as('driver'), 'notifications/n1')));
