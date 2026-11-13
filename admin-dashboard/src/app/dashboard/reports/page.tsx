@@ -9,7 +9,7 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { 
+import {
   FileText,
   Calendar,
   Users,
@@ -25,21 +25,23 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
-  getAllEmployees,
-  getActiveSites,
-  getSimpleAttendanceForDateRange,
   getPendingAdvances,
-  getActiveLoans,
+  loadPayrollInputs,
 } from '@/services';
+import { ACCESS_MATRIX } from '@/domain/roles';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { formatCurrency, cn } from '@/lib/utils';
-import { 
-  formatDate, 
+import { computePayroll, DRIVER_DUTY_LINE_ID, type PayrollEngineResult } from '@/domain/payroll';
+import { PayrollOverview, SiteTotalsTable, GrandTotalCard } from '@/components/payroll/PayrollSummary';
+import { RoleBadge } from '@/components/payroll/RoleBadge';
+import {
+  formatDate,
   getWeekNumber,
-  toISODateString,
+  getPayrollWeek,
+  todayISO,
+  addDaysISO,
 } from '@/lib/date-utils';
-import { startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
-import type { UserProfile, SimpleAttendance } from '@/types';
+import type { UserProfile } from '@/types';
 
 // Report types
 const reportTypes = [
@@ -88,47 +90,31 @@ const reportTypes = [
 ];
 
 export default function ReportsPage() {
-  const { isAuthorized } = useRequireRole(['owner', 'ceo', 'manager']);
+  const { isAuthorized } = useRequireRole(ACCESS_MATRIX.reports);
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<'week' | 'month' | 'custom'>('week');
-  const [customDates, setCustomDates] = useState({
-    start: toISODateString(startOfWeek(new Date(), { weekStartsOn: 1 })),
-    end: toISODateString(endOfWeek(new Date(), { weekStartsOn: 1 })),
-  });
+  const [customDates, setCustomDates] = useState(() => getPayrollWeek(todayISO()));
   const [generatedReport, setGeneratedReport] = useState<string | null>(null);
 
   // Calculate date range
   const { startDate, endDate } = useMemo(() => {
-    const now = new Date();
+    const today = todayISO();
     if (dateRange === 'week') {
-      return {
-        startDate: toISODateString(startOfWeek(now, { weekStartsOn: 1 })),
-        endDate: toISODateString(endOfWeek(now, { weekStartsOn: 1 })),
-      };
+      const w = getPayrollWeek(today);
+      return { startDate: w.start, endDate: w.end };
     } else if (dateRange === 'month') {
-      return {
-        startDate: toISODateString(startOfMonth(now)),
-        endDate: toISODateString(endOfMonth(now)),
-      };
+      const first = `${today.slice(0, 7)}-01`;
+      const nextMonthFirst = addDaysISO(`${today.slice(0, 7)}-28`, 4).slice(0, 7) + '-01';
+      return { startDate: first, endDate: addDaysISO(nextMonthFirst, -1) };
     }
     return { startDate: customDates.start, endDate: customDates.end };
   }, [dateRange, customDates]);
 
-  // Fetch all data
-  const { data: employees = [] } = useQuery({
-    queryKey: ['employees'],
-    queryFn: getAllEmployees,
-  });
-
-  const { data: sites = [] } = useQuery({
-    queryKey: ['active-sites'],
-    queryFn: getActiveSites,
-  });
-
-  const { data: attendance = [], isLoading: loadingAttendance } = useQuery({
-    queryKey: ['attendance-range', startDate, endDate],
-    queryFn: () => getSimpleAttendanceForDateRange(startDate, endDate),
-    enabled: !!startDate && !!endDate,
+  // Same inputs and the same engine as the Payroll page → identical figures.
+  const { data: inputs, isLoading: loadingAttendance } = useQuery({
+    queryKey: ['report-inputs', startDate, endDate],
+    queryFn: () => loadPayrollInputs({ start: startDate, end: endDate }),
+    enabled: !!startDate && !!endDate && startDate <= endDate,
   });
 
   const { data: pendingAdvances = [] } = useQuery({
@@ -136,11 +122,20 @@ export default function ReportsPage() {
     queryFn: getPendingAdvances,
   });
 
-  const { data: activeLoans = [] } = useQuery({
-    queryKey: ['activeLoans'],
-    queryFn: getActiveLoans,
-  });
+  // A payroll week uses the administrator's advance ticks from the Payroll page.
+  const isPayrollWeek = getPayrollWeek(startDate).start === startDate && getPayrollWeek(startDate).end === endDate;
+  const payroll = useMemo<PayrollEngineResult | null>(() => {
+    if (!inputs) return null;
+    let advanceSelections: Record<string, boolean> = {};
+    if (isPayrollWeek) {
+      try { advanceSelections = JSON.parse(window.localStorage.getItem(`payroll-advance-selections-${startDate}`) || '{}'); } catch { /* none */ }
+    }
+    return computePayroll({ ...inputs, advanceSelections, includeDeductions: isPayrollWeek });
+  }, [inputs, isPayrollWeek, startDate]);
 
+  const employees = inputs?.employees || [];
+  const sites = inputs?.sites || [];
+  const activeLoans = inputs?.loans || [];
   const activeEmployees = employees.filter(e => e.isActive).length;
   const weekNumber = getWeekNumber(new Date());
 
@@ -154,11 +149,11 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Reports</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Reports</h1>
           <p className="text-muted-foreground">
             Generate and view various reports
           </p>
@@ -166,55 +161,55 @@ export default function ReportsPage() {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-4">
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-blue-500/20 p-2">
                 <Users className="h-5 w-5 text-blue-400" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Active Employees</p>
-                <p className="text-2xl font-bold">{activeEmployees}</p>
+                <p className="text-xl sm:text-2xl font-bold">{activeEmployees}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-green-500/20 p-2">
                 <Building2 className="h-5 w-5 text-green-400" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Active Sites</p>
-                <p className="text-2xl font-bold">{sites.length}</p>
+                <p className="text-xl sm:text-2xl font-bold">{sites.length}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-purple-500/20 p-2">
                 <Calendar className="h-5 w-5 text-purple-400" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Current Week</p>
-                <p className="text-2xl font-bold">Week {weekNumber}</p>
+                <p className="text-xl sm:text-2xl font-bold">Week {weekNumber}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="bg-card/50">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-orange-500/20 p-2">
                 <FileText className="h-5 w-5 text-orange-400" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Attendance Records</p>
-                <p className="text-2xl font-bold">{attendance.length}</p>
+                <p className="text-sm text-muted-foreground">Gross payroll (period)</p>
+                <p className="text-xl sm:text-2xl font-bold">{formatCurrency(payroll?.totals.gross || 0)}</p>
               </div>
             </div>
           </CardContent>
@@ -223,8 +218,8 @@ export default function ReportsPage() {
 
       {/* Date Range Selector */}
       <Card className="bg-card/50">
-        <CardContent className="p-4">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between md:justify-between">
             <div className="flex items-center gap-2">
               <Calendar className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium">Date Range:</span>
@@ -349,8 +344,7 @@ export default function ReportsPage() {
         <ReportDisplay
           reportId={generatedReport}
           employees={employees}
-          sites={sites}
-          attendance={attendance}
+          payroll={payroll}
           pendingAdvances={pendingAdvances}
           activeLoans={activeLoans}
           startDate={startDate}
@@ -370,8 +364,7 @@ export default function ReportsPage() {
 interface ReportDisplayProps {
   reportId: string;
   employees: UserProfile[];
-  sites: any[];
-  attendance: SimpleAttendance[];
+  payroll: PayrollEngineResult | null;
   pendingAdvances: any[];
   activeLoans: any[];
   startDate: string;
@@ -383,8 +376,7 @@ interface ReportDisplayProps {
 function ReportDisplay({
   reportId,
   employees,
-  sites,
-  attendance,
+  payroll,
   pendingAdvances,
   activeLoans,
   startDate,
@@ -394,7 +386,7 @@ function ReportDisplay({
 }: ReportDisplayProps) {
   const reportType = reportTypes.find(r => r.id === reportId);
 
-  if (loading) {
+  if (loading || !payroll) {
     return (
       <Card className="bg-card/50">
         <CardContent className="flex h-64 items-center justify-center">
@@ -414,7 +406,7 @@ function ReportDisplay({
           <div>
             <CardTitle>{reportType?.title}</CardTitle>
             <CardDescription>
-              Period: {startDate} to {endDate}
+              Period: {formatDate(startDate, 'EEE dd/MM/yyyy')} to {formatDate(endDate, 'EEE dd/MM/yyyy')}
             </CardDescription>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -423,35 +415,13 @@ function ReportDisplay({
         </div>
       </CardHeader>
       <CardContent>
-        {reportId === 'attendance-summary' && (
-          <AttendanceSummaryReport
-            employees={employees}
-            attendance={attendance}
-            sites={sites}
-          />
-        )}
-        {reportId === 'payroll-summary' && (
-          <PayrollSummaryReport
-            employees={employees}
-            attendance={attendance}
-          />
-        )}
+        {reportId === 'attendance-summary' && <AttendanceSummaryReport payroll={payroll} />}
+        {reportId === 'payroll-summary' && <PayrollSummaryReport payroll={payroll} />}
         {reportId === 'employee-report' && (
           <EmployeeReport employees={employees} />
         )}
-        {reportId === 'site-report' && (
-          <SiteReport
-            sites={sites}
-            attendance={attendance}
-            employees={employees}
-          />
-        )}
-        {reportId === 'overtime-report' && (
-          <OvertimeReport
-            employees={employees}
-            attendance={attendance}
-          />
-        )}
+        {reportId === 'site-report' && <SiteReport payroll={payroll} />}
+        {reportId === 'overtime-report' && <OvertimeReport payroll={payroll} />}
         {reportId === 'financial-summary' && (
           <FinancialSummaryReport
             employees={employees}
@@ -465,96 +435,178 @@ function ReportDisplay({
 }
 
 // =====================================================
-// ATTENDANCE SUMMARY REPORT
+// REPORTS — all read the PayrollEngineResult (one source of truth)
 // =====================================================
 
-function AttendanceSummaryReport({
-  employees,
-  attendance,
-  sites,
-}: {
-  employees: UserProfile[];
-  attendance: SimpleAttendance[];
-  sites: any[];
-}) {
-  const employeeAttendance = useMemo(() => {
-    const map: Record<string, { name: string; daysPresent: number; halfDays: number; otHours: number }> = {};
-    
-    attendance.forEach(record => {
-      if (!map[record.workerId]) {
-        map[record.workerId] = { name: record.workerName, daysPresent: 0, halfDays: 0, otHours: 0 };
-      }
-      const hasMorning = !!record.morningSite;
-      const hasEvening = !!record.eveningSite;
-      if (hasMorning && hasEvening) {
-        map[record.workerId].daysPresent++;
-      } else if (hasMorning || hasEvening) {
-        map[record.workerId].halfDays++;
-      }
-      map[record.workerId].otHours += record.otHours || 0;
-    });
+const fmtNum = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
-    return Object.entries(map)
-      .map(([workerId, data]) => ({ workerId, ...data }))
-      .sort((a, b) => b.daysPresent - a.daysPresent);
-  }, [attendance]);
+function Empty() {
+  return <div className="flex h-40 items-center justify-center text-muted-foreground">No attendance records found for this period</div>;
+}
 
-  if (employeeAttendance.length === 0) {
-    return (
-      <div className="flex h-40 items-center justify-center text-muted-foreground">
-        No attendance records found for this period
-      </div>
-    );
-  }
-
+function AttendanceSummaryReport({ payroll }: { payroll: PayrollEngineResult }) {
+  if (payroll.employees.length === 0) return <Empty />;
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-blue-500">{attendance.length}</p>
-          <p className="text-sm text-muted-foreground">Total Records</p>
-        </div>
-        <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-green-500">{employeeAttendance.length}</p>
-          <p className="text-sm text-muted-foreground">Employees Tracked</p>
-        </div>
-        <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-orange-500">
-            {employeeAttendance.reduce((sum, e) => sum + e.otHours, 0).toFixed(1)}
-          </p>
-          <p className="text-sm text-muted-foreground">Total OT Hours</p>
-        </div>
+      <div className="grid grid-cols-3 gap-3">
+        <Stat label="Employees" value={String(payroll.totals.employees)} />
+        <Stat label="Days (labor + driver)" value={fmtNum(payroll.totals.days)} />
+        <Stat label="Supervisor site visits" value={String(payroll.totals.visits)} />
       </div>
-
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[560px] text-sm">
           <thead>
-            <tr className="border-b border-border text-left">
-              <th className="p-3 font-medium text-muted-foreground">Employee</th>
-              <th className="p-3 font-medium text-muted-foreground text-center">Full Days</th>
-              <th className="p-3 font-medium text-muted-foreground text-center">Half Days</th>
-              <th className="p-3 font-medium text-muted-foreground text-center">OT Hours</th>
+            <tr className="border-b border-border text-left text-muted-foreground">
+              <th className="p-3 font-medium">Employee</th>
+              <th className="p-3 font-medium">Role</th>
+              <th className="p-3 text-right font-medium">Days</th>
+              <th className="p-3 text-right font-medium">Visits</th>
+              <th className="p-3 text-right font-medium">OT h</th>
+              <th className="p-3 font-medium">Sites</th>
             </tr>
           </thead>
           <tbody>
-            {employeeAttendance.map((emp) => (
-              <tr key={emp.workerId} className="border-b border-border/50">
-                <td className="p-3 font-medium">{emp.name}</td>
-                <td className="p-3 text-center">
-                  <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-green-400">
-                    {emp.daysPresent}
-                  </span>
-                </td>
-                <td className="p-3 text-center">
-                  <span className="rounded-full bg-yellow-500/20 px-2 py-0.5 text-yellow-400">
-                    {emp.halfDays}
-                  </span>
-                </td>
-                <td className="p-3 text-center">
-                  <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-blue-400">
-                    {emp.otHours.toFixed(1)}
-                  </span>
-                </td>
+            {payroll.employees.map((e) => (
+              <tr key={e.employeeId} className="border-b border-border/50">
+                <td className="p-3 font-medium">{e.employeeName}</td>
+                <td className="p-3"><RoleBadge role={e.role} /></td>
+                <td className="p-3 text-right">{fmtNum(e.daysWorked)}</td>
+                <td className="p-3 text-right">{e.visits}</td>
+                <td className="p-3 text-right">{fmtNum(e.otHours)}</td>
+                <td className="p-3 text-muted-foreground">{e.sites.map((l) => l.siteName).join(', ')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <AnomalyList payroll={payroll} />
+    </div>
+  );
+}
+
+function PayrollSummaryReport({ payroll }: { payroll: PayrollEngineResult }) {
+  if (payroll.employees.length === 0) return <Empty />;
+  return (
+    <div className="space-y-4">
+      <PayrollOverview totals={payroll.totals} />
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[820px] text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-muted-foreground">
+              <th className="p-2 font-medium">Employee</th>
+              <th className="p-2 font-medium">Site</th>
+              <th className="p-2 text-right font-medium">Days / visits</th>
+              <th className="p-2 text-right font-medium">OT h</th>
+              <th className="p-2 text-right font-medium">Normal</th>
+              <th className="p-2 text-right font-medium">OT pay</th>
+              <th className="p-2 text-right font-medium">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payroll.employees.map((e) => (
+              <PayrollRows key={e.employeeId} e={e} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <GrandTotalCard totals={payroll.totals} />
+    </div>
+  );
+}
+
+function PayrollRows({ e }: { e: PayrollEngineResult['employees'][number] }) {
+  return (
+    <>
+      {e.sites.map((l, i) => (
+        <tr key={l.siteId} className="border-b border-border/40">
+          <td className="p-2 font-medium">{i === 0 ? e.employeeName : ''}</td>
+          <td className="p-2">{l.siteName}</td>
+          <td className="p-2 text-right">{l.payModel === 'site_visit' ? `${l.visits} visits` : fmtNum(l.days)}</td>
+          <td className="p-2 text-right">{fmtNum(l.otHours)}</td>
+          <td className="p-2 text-right">{formatCurrency(l.normalPay)}</td>
+          <td className="p-2 text-right">{formatCurrency(l.otPay)}</td>
+          <td className="p-2 text-right">{formatCurrency(l.total)}</td>
+        </tr>
+      ))}
+      <tr className="border-b border-border bg-muted/30 text-xs sm:text-sm">
+        <td className="p-2" colSpan={4}>
+          {e.employeeName}: gross {formatCurrency(e.gross)} (transport {formatCurrency(e.transport)})
+          {e.totalDeductions > 0 && <> − advances {formatCurrency(e.advanceDeduction)} − loans {formatCurrency(e.loanDeduction)}</>}
+        </td>
+        <td className="p-2 text-right font-semibold" colSpan={3}>Final {formatCurrency(e.finalSalary)}</td>
+      </tr>
+    </>
+  );
+}
+
+function SiteReport({ payroll }: { payroll: PayrollEngineResult }) {
+  if (payroll.sites.length === 0) return <Empty />;
+  return (
+    <div className="space-y-4">
+      <SiteTotalsTable sites={payroll.sites} />
+      {payroll.sites.map((site) => (
+        <div key={site.siteId}>
+          <h3 className="mb-2 font-semibold">{site.siteName}</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[480px] text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-muted-foreground">
+                  <th className="p-2 font-medium">Employee</th>
+                  <th className="p-2 text-right font-medium">Days / visits</th>
+                  <th className="p-2 text-right font-medium">OT h</th>
+                  <th className="p-2 text-right font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payroll.employees.flatMap((e) =>
+                  e.sites.filter((l) => l.siteId === site.siteId).map((l) => (
+                    <tr key={e.employeeId} className="border-b border-border/40">
+                      <td className="p-2">{e.employeeName}</td>
+                      <td className="p-2 text-right">{l.payModel === 'site_visit' ? `${l.visits} visits` : fmtNum(l.days)}</td>
+                      <td className="p-2 text-right">{fmtNum(l.otHours)}</td>
+                      <td className="p-2 text-right">{formatCurrency(l.total)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OvertimeReport({ payroll }: { payroll: PayrollEngineResult }) {
+  const rows = payroll.employees.flatMap((e) =>
+    e.sites.filter((l) => l.otHours > 0).map((l) => ({ e, l }))
+  );
+  if (rows.length === 0) return <div className="flex h-40 items-center justify-center text-muted-foreground">No overtime recorded in this period</div>;
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <Stat label="OT hours" value={fmtNum(payroll.totals.otHours)} />
+        <Stat label="OT pay" value={formatCurrency(payroll.totals.otPay)} />
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px] text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-muted-foreground">
+              <th className="p-2 font-medium">Employee</th>
+              <th className="p-2 font-medium">Site / duty</th>
+              <th className="p-2 text-right font-medium">OT h</th>
+              <th className="p-2 text-right font-medium">Rate (daily ÷ 8)</th>
+              <th className="p-2 text-right font-medium">OT pay</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ e, l }) => (
+              <tr key={`${e.employeeId}-${l.siteId}`} className="border-b border-border/40">
+                <td className="p-2">{e.employeeName}</td>
+                <td className="p-2">{l.siteId === DRIVER_DUTY_LINE_ID ? 'Driver duty' : l.siteName}</td>
+                <td className="p-2 text-right">{fmtNum(l.otHours)}</td>
+                <td className="p-2 text-right">{formatCurrency(e.otRate)}</td>
+                <td className="p-2 text-right">{formatCurrency(l.otPay)}</td>
               </tr>
             ))}
           </tbody>
@@ -564,126 +616,23 @@ function AttendanceSummaryReport({
   );
 }
 
-// =====================================================
-// PAYROLL SUMMARY REPORT
-// =====================================================
-
-function PayrollSummaryReport({
-  employees,
-  attendance,
-}: {
-  employees: UserProfile[];
-  attendance: SimpleAttendance[];
-}) {
-  const payrollData = useMemo(() => {
-    const employeeMap: Record<string, UserProfile> = {};
-    employees.forEach(e => { employeeMap[e.uid] = e; });
-
-    const workerTotals: Record<string, {
-      name: string;
-      daysWorked: number;
-      halfDays: number;
-      otHours: number;
-      dailyRate: number;
-      otRate: number;
-    }> = {};
-
-    attendance.forEach(record => {
-      if (!workerTotals[record.workerId]) {
-        const emp = employeeMap[record.workerId];
-        workerTotals[record.workerId] = {
-          name: record.workerName,
-          daysWorked: 0,
-          halfDays: 0,
-          otHours: 0,
-          dailyRate: emp?.dailyRate || 0,
-          otRate: emp?.otRate || 0,
-        };
-      }
-      const hasMorning = !!record.morningSite;
-      const hasEvening = !!record.eveningSite;
-      if (hasMorning && hasEvening) {
-        workerTotals[record.workerId].daysWorked++;
-      } else if (hasMorning || hasEvening) {
-        workerTotals[record.workerId].halfDays++;
-      }
-      workerTotals[record.workerId].otHours += record.otHours || 0;
-    });
-
-    return Object.entries(workerTotals)
-      .map(([workerId, data]) => {
-        const regularPay = (data.daysWorked * data.dailyRate) + (data.halfDays * data.dailyRate * 0.5);
-        const otPay = data.otHours * data.otRate;
-        return { workerId, ...data, regularPay, otPay, totalPay: regularPay + otPay };
-      })
-      .sort((a, b) => b.totalPay - a.totalPay);
-  }, [employees, attendance]);
-
-  const grandTotal = payrollData.reduce((sum, p) => sum + p.totalPay, 0);
-  const totalRegular = payrollData.reduce((sum, p) => sum + p.regularPay, 0);
-  const totalOT = payrollData.reduce((sum, p) => sum + p.otPay, 0);
-
-  if (payrollData.length === 0) {
-    return (
-      <div className="flex h-40 items-center justify-center text-muted-foreground">
-        No payroll data available for this period
-      </div>
-    );
-  }
-
+function AnomalyList({ payroll }: { payroll: PayrollEngineResult }) {
+  if (payroll.anomalies.length === 0) return null;
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-green-500">{formatCurrency(totalRegular)}</p>
-          <p className="text-sm text-muted-foreground">Regular Pay</p>
-        </div>
-        <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-orange-500">{formatCurrency(totalOT)}</p>
-          <p className="text-sm text-muted-foreground">OT Pay</p>
-        </div>
-        <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-blue-500">{formatCurrency(grandTotal)}</p>
-          <p className="text-sm text-muted-foreground">Total Payroll</p>
-        </div>
-      </div>
+    <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
+      <p className="mb-1 font-semibold">Data-quality notes (review — nothing was changed automatically)</p>
+      <ul className="list-inside list-disc space-y-0.5">
+        {payroll.anomalies.map((a, i) => <li key={i}>{a.employeeName}: {a.message}</li>)}
+      </ul>
+    </div>
+  );
+}
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border text-left">
-              <th className="p-3 font-medium text-muted-foreground">Employee</th>
-              <th className="p-3 font-medium text-muted-foreground text-center">Days</th>
-              <th className="p-3 font-medium text-muted-foreground text-center">OT Hrs</th>
-              <th className="p-3 font-medium text-muted-foreground text-right">Regular</th>
-              <th className="p-3 font-medium text-muted-foreground text-right">OT Pay</th>
-              <th className="p-3 font-medium text-muted-foreground text-right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {payrollData.map((emp) => (
-              <tr key={emp.workerId} className="border-b border-border/50">
-                <td className="p-3 font-medium">{emp.name}</td>
-                <td className="p-3 text-center">
-                  {emp.daysWorked}{emp.halfDays > 0 ? ` + ${emp.halfDays}½` : ''}
-                </td>
-                <td className="p-3 text-center">{emp.otHours.toFixed(1)}</td>
-                <td className="p-3 text-right">{formatCurrency(emp.regularPay)}</td>
-                <td className="p-3 text-right">{formatCurrency(emp.otPay)}</td>
-                <td className="p-3 text-right font-semibold">{formatCurrency(emp.totalPay)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="border-t-2 border-border font-bold">
-              <td className="p-3" colSpan={3}>Grand Total</td>
-              <td className="p-3 text-right">{formatCurrency(totalRegular)}</td>
-              <td className="p-3 text-right">{formatCurrency(totalOT)}</td>
-              <td className="p-3 text-right">{formatCurrency(grandTotal)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border p-3 text-center">
+      <p className="text-xl font-bold text-foreground sm:text-2xl">{value}</p>
+      <p className="text-sm text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -699,25 +648,26 @@ function EmployeeReport({ employees }: { employees: UserProfile[] }) {
   const roleGroups = useMemo(() => {
     const groups: Record<string, UserProfile[]> = {};
     employees.forEach(emp => {
-      if (!groups[emp.role]) groups[emp.role] = [];
-      groups[emp.role].push(emp);
+      const role = emp.role || 'helper';
+      if (!groups[role]) groups[role] = [];
+      groups[role].push(emp);
     });
     return groups;
   }, [employees]);
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-3 sm:p-4">
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-blue-500">{employees.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-blue-500">{employees.length}</p>
           <p className="text-sm text-muted-foreground">Total Employees</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-green-500">{activeEmployees.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-green-500">{activeEmployees.length}</p>
           <p className="text-sm text-muted-foreground">Active</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-red-500">{inactiveEmployees.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-red-500">{inactiveEmployees.length}</p>
           <p className="text-sm text-muted-foreground">Inactive</p>
         </div>
       </div>
@@ -772,197 +722,6 @@ function EmployeeReport({ employees }: { employees: UserProfile[] }) {
 }
 
 // =====================================================
-// SITE REPORT
-// =====================================================
-
-function SiteReport({
-  sites,
-  attendance,
-}: {
-  sites: any[];
-  attendance: SimpleAttendance[];
-  employees: UserProfile[];
-}) {
-  const siteData = useMemo(() => {
-    const siteWorkerMap: Record<string, Set<string>> = {};
-    const siteDayMap: Record<string, Set<string>> = {};
-
-    attendance.forEach(record => {
-      [record.morningSite, record.eveningSite].forEach(siteId => {
-        if (siteId) {
-          if (!siteWorkerMap[siteId]) siteWorkerMap[siteId] = new Set();
-          if (!siteDayMap[siteId]) siteDayMap[siteId] = new Set();
-          siteWorkerMap[siteId].add(record.workerId);
-          siteDayMap[siteId].add(record.date);
-        }
-      });
-    });
-
-    return sites.map(site => ({
-      ...site,
-      uniqueWorkers: siteWorkerMap[site.id]?.size || 0,
-      activeDays: siteDayMap[site.id]?.size || 0,
-    })).sort((a: any, b: any) => b.uniqueWorkers - a.uniqueWorkers);
-  }, [sites, attendance]);
-
-  if (sites.length === 0) {
-    return (
-      <div className="flex h-40 items-center justify-center text-muted-foreground">
-        No active sites found
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border text-left">
-              <th className="p-3 font-medium text-muted-foreground">Site Name</th>
-              <th className="p-3 font-medium text-muted-foreground">Code</th>
-              <th className="p-3 font-medium text-muted-foreground">Location</th>
-              <th className="p-3 font-medium text-muted-foreground text-center">Workers</th>
-              <th className="p-3 font-medium text-muted-foreground text-center">Active Days</th>
-              <th className="p-3 font-medium text-muted-foreground text-center">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {siteData.map((site: any) => (
-              <tr key={site.id} className="border-b border-border/50">
-                <td className="p-3 font-medium">{site.name}</td>
-                <td className="p-3 text-muted-foreground">{site.code || '-'}</td>
-                <td className="p-3 text-muted-foreground">{site.city || site.address || '-'}</td>
-                <td className="p-3 text-center">
-                  <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-blue-400">
-                    {site.uniqueWorkers}
-                  </span>
-                </td>
-                <td className="p-3 text-center">{site.activeDays}</td>
-                <td className="p-3 text-center">
-                  <span className={cn(
-                    'rounded-full px-2 py-0.5 text-xs capitalize',
-                    site.status === 'active' ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'
-                  )}>
-                    {site.status}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// =====================================================
-// OVERTIME REPORT
-// =====================================================
-
-function OvertimeReport({
-  employees,
-  attendance,
-}: {
-  employees: UserProfile[];
-  attendance: SimpleAttendance[];
-}) {
-  const overtimeData = useMemo(() => {
-    const employeeMap: Record<string, UserProfile> = {};
-    employees.forEach(e => { employeeMap[e.uid] = e; });
-
-    const workerOT: Record<string, { name: string; otHours: number; otRate: number; days: number }> = {};
-
-    attendance.forEach(record => {
-      if (record.otHours > 0) {
-        if (!workerOT[record.workerId]) {
-          const emp = employeeMap[record.workerId];
-          workerOT[record.workerId] = {
-            name: record.workerName,
-            otHours: 0,
-            otRate: emp?.otRate || 0,
-            days: 0,
-          };
-        }
-        workerOT[record.workerId].otHours += record.otHours;
-        workerOT[record.workerId].days++;
-      }
-    });
-
-    return Object.entries(workerOT)
-      .map(([workerId, data]) => ({
-        workerId,
-        ...data,
-        otPay: data.otHours * data.otRate,
-      }))
-      .sort((a, b) => b.otHours - a.otHours);
-  }, [employees, attendance]);
-
-  const totalOTHours = overtimeData.reduce((sum, d) => sum + d.otHours, 0);
-  const totalOTPay = overtimeData.reduce((sum, d) => sum + d.otPay, 0);
-
-  if (overtimeData.length === 0) {
-    return (
-      <div className="flex h-40 items-center justify-center text-muted-foreground">
-        No overtime records found for this period
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-orange-500">{totalOTHours.toFixed(1)}</p>
-          <p className="text-sm text-muted-foreground">Total OT Hours</p>
-        </div>
-        <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-green-500">{formatCurrency(totalOTPay)}</p>
-          <p className="text-sm text-muted-foreground">Total OT Pay</p>
-        </div>
-        <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-blue-500">{overtimeData.length}</p>
-          <p className="text-sm text-muted-foreground">Employees with OT</p>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border text-left">
-              <th className="p-3 font-medium text-muted-foreground">Employee</th>
-              <th className="p-3 font-medium text-muted-foreground text-center">OT Days</th>
-              <th className="p-3 font-medium text-muted-foreground text-center">OT Hours</th>
-              <th className="p-3 font-medium text-muted-foreground text-right">OT Rate/hr</th>
-              <th className="p-3 font-medium text-muted-foreground text-right">OT Pay</th>
-            </tr>
-          </thead>
-          <tbody>
-            {overtimeData.map((emp) => (
-              <tr key={emp.workerId} className="border-b border-border/50">
-                <td className="p-3 font-medium">{emp.name}</td>
-                <td className="p-3 text-center">{emp.days}</td>
-                <td className="p-3 text-center">{emp.otHours.toFixed(1)}</td>
-                <td className="p-3 text-right">{formatCurrency(emp.otRate)}</td>
-                <td className="p-3 text-right font-semibold">{formatCurrency(emp.otPay)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="border-t-2 border-border font-bold">
-              <td className="p-3" colSpan={2}>Total</td>
-              <td className="p-3 text-center">{totalOTHours.toFixed(1)}</td>
-              <td className="p-3"></td>
-              <td className="p-3 text-right">{formatCurrency(totalOTPay)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// =====================================================
 // FINANCIAL SUMMARY REPORT
 // =====================================================
 
@@ -980,21 +739,21 @@ function FinancialSummaryReport({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-4">
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-yellow-500">{pendingAdvances.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-yellow-500">{pendingAdvances.length}</p>
           <p className="text-sm text-muted-foreground">Pending Advances</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-orange-500">{formatCurrency(totalPendingAdvances)}</p>
+          <p className="text-xl sm:text-2xl font-bold text-orange-500">{formatCurrency(totalPendingAdvances)}</p>
           <p className="text-sm text-muted-foreground">Advance Amount</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-blue-500">{activeLoans.length}</p>
+          <p className="text-xl sm:text-2xl font-bold text-blue-500">{activeLoans.length}</p>
           <p className="text-sm text-muted-foreground">Active Loans</p>
         </div>
         <div className="rounded-lg border border-border p-3 text-center">
-          <p className="text-2xl font-bold text-red-500">{formatCurrency(totalActiveLoanBalance)}</p>
+          <p className="text-xl sm:text-2xl font-bold text-red-500">{formatCurrency(totalActiveLoanBalance)}</p>
           <p className="text-sm text-muted-foreground">Outstanding Loan Balance</p>
         </div>
       </div>
@@ -1068,4 +827,4 @@ function FinancialSummaryReport({
       )}
     </div>
   );
-}
+}

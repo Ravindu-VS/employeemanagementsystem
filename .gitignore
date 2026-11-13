@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Secrets
+.env
+backend-services/.env
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

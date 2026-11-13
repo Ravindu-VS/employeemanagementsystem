@@ -38,44 +38,35 @@ export {
   generateSiteCode,
 } from './site-service';
 
-// Attendance Service
+// Attendance Service (simpleAttendance — deterministic ids, transactional save)
 export {
-  getAttendance,
-  getOrCreateAttendance,
-  startAttendanceSegment,
-  endAttendanceSegment,
-  markAbsent,
-  markOnLeave,
-  getTodayAttendance,
-  getEmployeeAttendanceSummary,
-  autoCloseOrphanedSegments,
-  // Simplified attendance (supervisor marking)
   getSimpleAttendance,
-  getWorkerSimpleAttendance,
-  markSimpleAttendance,
-  bulkMarkSimpleAttendance,
-  getWorkerWeeklyAttendanceSummary,
-  getDailySimpleAttendance,
   getSimpleAttendanceForDateRange,
+  getDriverAttendance,
+  getEmployeeAttendanceSummary,
+  bulkMarkSimpleAttendance,
+  verifySiteAttendance,
+  bulkMarkDriverAttendance,
 } from './attendance-service';
 
-// Payroll Service
+// Payroll Service (data access only — calculation is domain/payroll/engine.ts)
 export {
   getPayroll,
   getPayrollsForWeek,
   getEmployeePayrollHistory,
-  generateEmployeePayroll,
+  computePayrollForPeriod,
+  loadPayrollInputs,
+  previewWeeklyPayroll,
   generateWeeklyPayroll,
-  addBonus,
-  addDeduction,
   updatePayrollStatus,
   markAsPaid,
-  getWeeklyPayrollSummary,
+  recordLoanInstalment,
 } from './payroll-service';
 
 // Advance Service
 export {
   getAdvance,
+  getAllAdvances,
   getPendingAdvances,
   getEmployeeAdvances,
   getAdvancesPaginated,
@@ -84,7 +75,15 @@ export {
   rejectAdvance,
   cancelAdvance,
   markAdvanceDeducted,
-  getUndeductedAdvances,
+  markAdvanceCarriedForward,
+  getAllPendingAdvances,
+  getCarriedForwardAdvances,
+  getDeductedAdvances,
+  resetCarryForwardForWeek,
+  getPendingAdvancesByWorkerIds,
+  checkDuplicatePendingAdvance,
+  updateAdvanceRequest,
+  deleteAdvance,
 } from './advance-service';
 
 // Loan Service
@@ -127,3 +126,27 @@ export {
   DEFAULT_ATTENDANCE_SETTINGS,
   DEFAULT_NOTIFICATION_SETTINGS,
 } from './settings-service';
+
+// Notifications
+export { notifyUsers, notifyRoles, getMyNotifications, markNotificationsRead } from './notification-service';
+
+// Leave
+export { getAllLeaveRequests, getEmployeeLeaveRequests, getLeaveSettings, requestLeave, decideLeave, cancelLeave } from './leave-service';
+
+// Transport (vehicles & routes)
+export { getVehicles, saveVehicle, getTransportRoutes, saveTransportRoute } from './transport-service';
+
+// Employee self-service
+export { getMyAttendance, getMyPayslips, getMyAdvances, getMyLoans, requestMyAdvance } from './self-service';
+
+// Recruitment
+export { getJobPostings, saveJobPosting, getCandidates, addCandidate, moveCandidateStage } from './recruitment-service';
+
+// Assets
+export { getAssets, createAsset, changeAsset, type NewAsset } from './asset-service';
+
+// HR assistant (RAG)
+export { getHrDocuments, saveHrDocument, deleteHrDocument, askAssistant, type AssistantAnswer } from './hr-assistant-service';
+
+// Monitoring & maintenance
+export { reportClientError, installGlobalErrorHandlers, getRecentClientErrors, runHealthChecks, planAttendanceMigration, runAttendanceMigration, type HealthCheck } from './maintenance-service';

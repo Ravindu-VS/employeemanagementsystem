@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # Database Service
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: kk_sons_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kksons_hr}
+      POSTGRES_USER: ${POSTGRES_USER:-kksons_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in backend-services/.env}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    networks:
+      - kksons-network
+
+  employee-service:
+    build:
+      context: ./employee-service
+    container_name: kk_sons_employee_service
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-kksons_admin}:${POSTGRES_PASSWORD}@postgres-db:5432/${POSTGRES_DB:-kksons_hr}
+    networks:
+      - kksons-network
+    depends_on:
+      - postgres-db
+
+  # 2. Attendance Microservice
+  attendance-service:
+    build:
+      context: ./attendance-service
+    container_name: kk_sons_attendance_service
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-kksons_admin}:${POSTGRES_PASSWORD}@postgres-db:5432/${POSTGRES_DB:-kksons_hr}
+    networks:
+      - kksons-network
+    depends_on:
+      - postgres-db
+
+  # 3. Leave Microservice
+  leave-service:
+    build:
+      context: ./leave-service
+    container_name: kk_sons_leave_service
+    ports:
+      - "8003:8003"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-kksons_admin}:${POSTGRES_PASSWORD}@postgres-db:5432/${POSTGRES_DB:-kksons_hr}
+    networks:
+      - kksons-network
+    depends_on:
+      - postgres-db
+
+  # 4. Payroll Microservice
+  payroll-service:
+    build:
+      context: ./payroll-service
+    container_name: kk_sons_payroll_service
+    ports:
+      - "8004:8004"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-kksons_admin}:${POSTGRES_PASSWORD}@postgres-db:5432/${POSTGRES_DB:-kksons_hr}
+    networks:
+      - kksons-network
+    depends_on:
+      - postgres-db
+
+  # 5. Notification Microservice
+  notification-service:
+    build:
+      context: ./notification-service
+    container_name: kk_sons_notification_service
+    ports:
+      - "8005:8005"
+    networks:
+      - kksons-network
+
+  # 6. AI & RAG Microservice
+  ai-service:
+    build:
+      context: ./ai-service
+    container_name: kk_sons_ai_service
+    ports:
+      - "8006:8006"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-kksons_admin}:${POSTGRES_PASSWORD}@postgres-db:5432/${POSTGRES_DB:-kksons_hr}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    networks:
+      - kksons-network
+    depends_on:
+      - postgres-db
+
+networks:
+  kksons-network:
+    driver: bridge
+
+volumes:
+  pgdata:
+    driver: local
