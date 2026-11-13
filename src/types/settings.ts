@@ -51,6 +51,8 @@ export interface AttendanceSettings {
 
 export interface NotificationSettings {
   emailEnabled: boolean;
+  /** SMS through the notification service (needs NEXT_PUBLIC_NOTIFY_ENDPOINT). */
+  smsEnabled?: boolean;
   inAppEnabled: boolean;
   payrollAlerts: boolean;
   advanceAlerts: boolean;

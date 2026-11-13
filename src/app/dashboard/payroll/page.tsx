@@ -14,7 +14,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Calendar, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, CheckCircle, Loader2,
-  Wallet, ShieldCheck, AlertTriangle, Info,
+  Wallet, ShieldCheck, AlertTriangle, Info, Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +30,7 @@ import { detectAnomalies } from '@/domain/anomalies';
 import { WorkerPayrollCard } from '@/components/payroll/WorkerPayrollCard';
 import { PayrollOverview, SiteTotalsTable, GrandTotalCard } from '@/components/payroll/PayrollSummary';
 import { RoleBadge } from '@/components/payroll/RoleBadge';
+import { downloadPayslip } from '@/lib/payslip-pdf';
 import type { UserRole, WeeklyPayroll } from '@/types';
 
 const selectionKey = (week: string) => `payroll-advance-selections-${week}`;
@@ -337,6 +338,9 @@ function StoredPayrollList({
                     </button>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-bold text-foreground">{formatCurrency(r.netPay)}</p>
+                      <Button size="sm" variant="ghost" className="gap-1" onClick={() => downloadPayslip(r)} aria-label={`Download payslip for ${r.employeeName}`}>
+                        <Download className="h-3.5 w-3.5" /> PDF
+                      </Button>
                       {r.status !== 'paid' && (
                         <Button size="sm" variant="outline" className="gap-1" onClick={() => onMarkPaid(r.id)} disabled={markPaidPending}>
                           <Wallet className="h-3.5 w-3.5" /> Mark paid

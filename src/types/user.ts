@@ -71,6 +71,8 @@ export interface UserProfile extends User {
   otRate: number;
   /** Daily salary history; the rate effective on each attendance date is used. */
   salaryHistory?: SalaryHistoryEntry[];
+  /** Org chart: explicit manager (uid). Optional — otherwise derived from role/site. */
+  reportsTo?: string;
   /** Previous worker IDs (attendance stored under them still belongs here). */
   formerWorkerIds?: string[];
   removedAt?: Date;

@@ -12,6 +12,7 @@ import { db } from '@/lib/firebase/config';
 import { COLLECTIONS } from '@/constants';
 import { createLogger } from '@/lib/logger';
 import type { Notification, NotificationType, UserRole } from '@/types';
+import { notifyExternally } from './external-notify';
 
 const log = createLogger('Notifications');
 
@@ -45,6 +46,8 @@ export async function notifyUsers(userIds: string[], n: NotificationInput): Prom
   } catch (e) {
     log.warn('Failed to send notification', { error: String(e) });
   }
+  // Email / SMS (optional, only when the notification service is configured).
+  void notifyExternally(ids, n);
 }
 
 /**

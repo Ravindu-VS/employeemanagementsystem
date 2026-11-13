@@ -47,3 +47,6 @@ export * from './leave';
 
 // Transport (vehicles & routes)
 export * from './transport';
+
+// Recruitment, assets, HR documents, monitoring
+export * from './hr';

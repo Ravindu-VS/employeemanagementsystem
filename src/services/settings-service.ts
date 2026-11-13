@@ -57,6 +57,7 @@ export const DEFAULT_ATTENDANCE_SETTINGS: AttendanceSettings = {
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   emailEnabled: true,
+  smsEnabled: false,
   inAppEnabled: true,
   payrollAlerts: true,
   advanceAlerts: true,

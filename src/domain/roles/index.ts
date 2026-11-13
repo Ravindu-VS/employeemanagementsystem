@@ -31,7 +31,8 @@ export function isHigherRoleMultiSite(role?: string | UserRole): boolean {
 export type AppArea =
   | 'dashboard' | 'approvals' | 'employees' | 'employees_manage' | 'sites' | 'attendance'
   | 'payroll' | 'advances' | 'loans' | 'transport' | 'reports' | 'settings' | 'audit_logs' | 'roles_assign'
-  | 'leave' | 'leave_approve';
+  | 'leave' | 'leave_approve' | 'self_service' | 'recruitment' | 'assets' | 'org_chart'
+  | 'hr_assistant' | 'hr_documents_manage' | 'analytics' | 'system';
 
 const ALL: UserRole[] = ['owner', 'ceo', 'manager', 'supervisor', 'draughtsman', 'bass', 'helper', 'driver'];
 const ADMIN: UserRole[] = ['owner', 'ceo'];
@@ -55,6 +56,14 @@ export const ACCESS_MATRIX: Record<AppArea, UserRole[]> = {
   audit_logs: ADMIN,
   leave: ALL,                         // everyone can request leave
   leave_approve: PAYROLL_ADMIN,
+  self_service: ALL,                  // My Portal: own attendance, payslips, advances, loans
+  recruitment: PAYROLL_ADMIN,
+  assets: PAYROLL_ADMIN,
+  org_chart: ATTENDANCE_MARKERS,      // needs the employee list (markers can read it)
+  hr_assistant: ALL,
+  hr_documents_manage: ADMIN,
+  analytics: PAYROLL_ADMIN,
+  system: ADMIN,                      // monitoring + data maintenance
 };
 
 export function canAccess(role: UserRole | string | null | undefined, area: AppArea): boolean {

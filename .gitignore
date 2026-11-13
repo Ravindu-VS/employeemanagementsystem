@@ -76,3 +76,10 @@ public/workbox-*.js
 public/workbox-*.js.map
 public/swe-worker-*.js
 public/swe-worker-*.js.map
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+backend/.env

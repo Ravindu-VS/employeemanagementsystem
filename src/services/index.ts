@@ -135,3 +135,18 @@ export { getAllLeaveRequests, getEmployeeLeaveRequests, getLeaveSettings, reques
 
 // Transport (vehicles & routes)
 export { getVehicles, saveVehicle, getTransportRoutes, saveTransportRoute } from './transport-service';
+
+// Employee self-service
+export { getMyAttendance, getMyPayslips, getMyAdvances, getMyLoans, requestMyAdvance } from './self-service';
+
+// Recruitment
+export { getJobPostings, saveJobPosting, getCandidates, addCandidate, moveCandidateStage } from './recruitment-service';
+
+// Assets
+export { getAssets, createAsset, changeAsset, type NewAsset } from './asset-service';
+
+// HR assistant (RAG)
+export { getHrDocuments, saveHrDocument, deleteHrDocument, askAssistant, type AssistantAnswer } from './hr-assistant-service';
+
+// Monitoring & maintenance
+export { reportClientError, installGlobalErrorHandlers, getRecentClientErrors, runHealthChecks, planAttendanceMigration, runAttendanceMigration, type HealthCheck } from './maintenance-service';

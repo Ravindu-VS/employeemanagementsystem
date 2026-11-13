@@ -1,0 +1,44 @@
+name: Deploy backend (Cloud Run)
+
+# Manual. Needs secrets GCP_SA_KEY (service account JSON with Cloud Run Admin,
+# Artifact Registry Writer, Service Account User) and repository variables
+# GCP_PROJECT_ID, GCP_REGION (e.g. asia-south1), ALLOWED_ORIGINS.
+# Service secrets (ANTHROPIC_API_KEY, SMTP_*, SMS_*) are set on the Cloud Run
+# services themselves (Secret Manager), never in this repository.
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: Which service
+        type: choice
+        options: [ai-service, notification-service]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test before deploying
+        working-directory: backend/${{ inputs.service }}
+        run: |
+          pip install -r requirements.txt -r requirements-dev.txt
+          python -m pytest -q
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: kk-${{ inputs.service }}
+          source: backend/${{ inputs.service }}
+          region: ${{ vars.GCP_REGION || 'asia-south1' }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          env_vars: |
+            FIREBASE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}
+            ALLOWED_ORIGINS=${{ vars.ALLOWED_ORIGINS }}
+          flags: --allow-unauthenticated --max-instances=3

@@ -19,6 +19,15 @@ export const APP_CONFIG = {
   supportPhone: '+94 11 234 5678',
 } as const;
 
+/** Company identity used on every page, payslip, PDF and export. */
+export const COMPANY = {
+  NAME: 'KK & SONS Architectural Services',
+  SHORT_NAME: 'KK & SONS',
+  COPYRIGHT: '© 2026 KK & SONS Architectural Services. All rights reserved.',
+  CURRENCY: 'LKR',
+  TIMEZONE: 'Asia/Colombo',
+} as const;
+
 // =====================================================
 // ROUTES
 // =====================================================
@@ -99,6 +108,13 @@ export const ROUTES = {
   USER_APPROVALS: '/dashboard/user-approvals',
   LEAVE: '/dashboard/leave',
   TRANSPORT: '/dashboard/transport',
+  MY_PORTAL: '/dashboard/me',
+  RECRUITMENT: '/dashboard/recruitment',
+  ASSETS: '/dashboard/assets',
+  ORG_CHART: '/dashboard/org-chart',
+  HR_ASSISTANT: '/dashboard/assistant',
+  ANALYTICS: '/dashboard/analytics',
+  SYSTEM: '/dashboard/system',
 } as const;
 
 // =====================================================
@@ -112,6 +128,11 @@ export const COLLECTIONS = {
   SIMPLE_ATTENDANCE: 'simpleAttendance', // authoritative supervisor-marked attendance
   SYSTEM: 'system',
   LEAVES: 'leaves',
+  JOB_POSTINGS: 'jobPostings',
+  CANDIDATES: 'candidates',
+  ASSETS: 'assets',
+  HR_DOCUMENTS: 'hrDocuments',
+  CLIENT_ERRORS: 'clientErrors',
   VEHICLES: 'vehicles',
   TRANSPORT_ROUTES: 'transportRoutes',
   PAYROLL: 'payroll',

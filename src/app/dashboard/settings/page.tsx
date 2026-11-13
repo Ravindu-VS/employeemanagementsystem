@@ -580,6 +580,13 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
+                      <p className="font-medium">SMS Notifications</p>
+                      <p className="text-sm text-muted-foreground">Text employees about approvals and payments (needs the notification service and an SMS gateway)</p>
+                    </div>
+                    <Toggle checked={notifData.smsEnabled === true} onChange={(v) => setNotifData(prev => ({ ...prev, smsEnabled: v }))} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
                       <p className="font-medium">In-App Notifications</p>
                       <p className="text-sm text-muted-foreground">Show notifications inside the dashboard</p>
                     </div>

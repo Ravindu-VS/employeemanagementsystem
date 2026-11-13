@@ -98,6 +98,8 @@ export interface SimpleAttendance {
   morningSite?: string | null;  // siteId or null if absent
   eveningSite?: string | null;  // siteId or null if absent
   siteOtHours?: Record<string, number>; // Record of siteId to OT hours
+  /** Current format: per-site morning/evening shifts (deterministic docs). */
+  siteShifts?: Record<string, { morning: boolean; evening: boolean }>;
 
   // For SUPERVISORS (owner, ceo, manager, supervisor)
   // use siteVisits array instead of morning/evening

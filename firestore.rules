@@ -180,6 +180,46 @@ service cloud.firestore {
     }
 
     // everything else: denied
+    // ---------- Recruitment ----------
+    match /jobPostings/{id} {
+      allow read, write: if isPayrollAdmin();
+    }
+    match /candidates/{id} {
+      allow read: if isPayrollAdmin();
+      // new applicants always start at "applied" — nothing is pre-rejected
+      allow create: if isPayrollAdmin() && request.resource.data.stage == 'applied';
+      // a stage change is a person's decision; rejecting needs a written reason
+      allow update: if isPayrollAdmin()
+        && (!changes(['stage']) || request.resource.data.stageChangedBy == request.auth.uid)
+        && (request.resource.data.stage != 'rejected' || resource.data.stage == 'rejected'
+            || (request.resource.data.rejectionReason is string && request.resource.data.rejectionReason.size() >= 5));
+      allow delete: if isAdmin();
+    }
+
+    // ---------- Assets ----------
+    match /assets/{id} {
+      allow read: if isPayrollAdmin()
+        || (active() && resource.data.assignedToEmployeeId == request.auth.uid);
+      allow create, update: if isPayrollAdmin();
+      allow delete: if false; // retire instead, history is kept
+    }
+
+    // ---------- HR knowledge base (HR assistant) ----------
+    match /hrDocuments/{id} {
+      allow read: if (active() && resource.data.audience == 'all') || isPayrollAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ---------- Monitoring ----------
+    match /clientErrors/{id} {
+      allow create: if signedIn()
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 4000
+        && (!('userId' in request.resource.data) || request.resource.data.userId == request.auth.uid);
+      allow read, delete: if isAdmin();
+      allow update: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

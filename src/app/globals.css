@@ -284,3 +284,8 @@
     page-break-before: always;
   }
 }
+
+/* Data-viz roles (validated categorical slot 1; brand red is kept out of charts
+   because red reads as "critical"). */
+:root { --viz-1: #2a78d6; --viz-grid: #e4e4e1; --viz-axis: #6b6a66; }
+.dark { --viz-1: #3987e5; --viz-grid: #2e2e2c; --viz-axis: #a3a29b; }

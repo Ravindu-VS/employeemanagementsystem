@@ -1,7 +1,9 @@
 # KK & SONS Architectural Services — Workforce Management (admin dashboard)
 
 Next.js 14 PWA + Firebase (Auth, Firestore) for construction-workforce
-attendance, weekly payroll, advances, loans, transport and reports.
+attendance, weekly payroll, advances, loans, transport, reports, employee
+self-service, an HR assistant, recruitment, assets, org chart and analytics.
+Optional FastAPI services in `backend/` add AI answers and email/SMS.
 
 ```bash
 cp .env.example .env.local   # Firebase web config

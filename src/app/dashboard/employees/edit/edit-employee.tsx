@@ -32,7 +32,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { getEmployee, updateEmployee } from '@/services';
+import { getAllEmployees, getEmployee, updateEmployee } from '@/services';
 import { ACCESS_MATRIX } from '@/domain/roles';
 import { useRequireRole } from '@/components/providers/auth-provider';
 import { useToast } from '@/components/ui/use-toast';
@@ -46,6 +46,7 @@ import type { UserRole } from '@/types';
 const employeeSchema = z.object({
   displayName: z.string().min(2, 'Name must be at least 2 characters'),
   role: z.enum(['owner', 'ceo', 'manager', 'supervisor', 'draughtsman', 'bass', 'helper', 'driver']),
+  reportsTo: z.string().optional(),
   phone: z.string().optional(),
   address: z.string().optional(),
   employeeId: z.string().optional(),
@@ -88,6 +89,7 @@ export default function EditEmployeePage() {
     queryFn: () => getEmployee(employeeId),
     enabled: !!employeeId,
   });
+  const { data: allEmployees = [] } = useQuery({ queryKey: ['employees'], queryFn: getAllEmployees, enabled: !!employeeId });
 
   const {
     register,
@@ -140,6 +142,7 @@ export default function EditEmployeePage() {
         siteVisitRate: employee.siteVisitRate,
         driverLicenseNumber: employee.driverLicenseNumber || '',
         vehicleId: employee.vehicleId || '',
+        reportsTo: employee.reportsTo || '',
       });
     }
   }, [employee, reset]);
@@ -150,6 +153,7 @@ export default function EditEmployeePage() {
       const updateData: Record<string, unknown> = {
         displayName: data.displayName,
         role: data.role as UserRole,
+        reportsTo: data.reportsTo || '',
         phone: data.phone,
         address: data.address,
         workerId: data.employeeId,
@@ -309,6 +313,22 @@ export default function EditEmployeePage() {
                     Level {USER_ROLES[selectedRole as UserRole]?.level}
                   </p>
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="reportsTo">Reports to (org chart)</Label>
+                <select
+                  id="reportsTo"
+                  {...register('reportsTo')}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">Automatic (by role and site)</option>
+                  {allEmployees
+                    .filter((e) => e.isActive && e.uid !== employeeId && ['owner', 'ceo', 'manager', 'supervisor'].includes(e.role || ''))
+                    .map((e) => (
+                      <option key={e.uid} value={e.uid}>{e.displayName} ({USER_ROLES[e.role as UserRole]?.label})</option>
+                    ))}
+                </select>
               </div>
 
               <div className="space-y-2">

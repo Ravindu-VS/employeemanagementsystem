@@ -32,16 +32,20 @@ Rule of the codebase: **pages never calculate pay or days**. Payroll page,
 stored payroll generation, reports and the dashboard all call the same
 `computePayroll()` / `normalizeAttendance()`.
 
-### Future backend (optional, not live)
+### Backend services (optional, `backend/`)
 
-`backend-services/` (outer project folder, not part of this repository's
-deployment) holds FastAPI + PostgreSQL scaffolding: docker-compose,
-health-check services and a basic employee/attendance CRUD prototype. It does
-not implement payroll rules. If the backend is ever moved off Firebase,
-replace the Firestore calls inside `src/services/*` with HTTP calls — the
-domain layer (all business rules) stays unchanged, so nothing is
-re-implemented. Migrate data with a one-way, verified copy; never run
-Firestore and PostgreSQL as two writable sources of truth.
+```text
+Web app ──(Firebase ID token)──▶ ai-service (FastAPI)            /ask   → Claude, grounded in retrieved passages
+        ──(Firebase ID token)──▶ notification-service (FastAPI)  /notify → SMTP email, Notify.lk / HTTP SMS
+```
+
+Both are optional and stateless. Without them the app still works: the HR
+assistant answers extractively in the browser and notifications stay in-app.
+They never touch payroll data or rules. Setup, security model, tests and
+Cloud Run deployment: **[backend/README.md](../backend/README.md)**.
+
+The old `backend-services/` PostgreSQL prototype in the outer folder is not
+used and holds no business rules.
 
 ---
 
@@ -59,9 +63,11 @@ Authentication → Sign-in method; add your domains under Authorized domains;
 deploy `firestore.rules` as described in §3. Do **not** use open
 "any signed-in user may write" rules.
 
-Environments: development (`.env.local`), staging/production (GitHub Actions
-secrets → `NEXT_PUBLIC_*` at build time). Secrets are never committed;
-The optional `backend-services/.env` holds the PostgreSQL password.
+Environments: development (`.env.local`), **staging** (Firebase Hosting
+channel `staging`, see §9) and production (GitHub Pages). Values come from
+GitHub Actions secrets/variables → `NEXT_PUBLIC_*` at build time. Secrets are
+never committed. Optional: `NEXT_PUBLIC_AI_ENDPOINT`,
+`NEXT_PUBLIC_NOTIFY_ENDPOINT` (backend service URLs).
 
 ---
 
@@ -93,6 +99,13 @@ while `system/bootstrap` does not exist (it is created in the same write).
 | Leave: request own / see own balance | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Leave: approve / reject | ✓ | ✓ | ✓ | – | – | – |
 | Transport (vehicles, routes) | ✓ | ✓ | ✓ | – | – | – |
+| My Portal (own attendance, payslips + PDF, advances, loans) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| HR Assistant (ask) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| HR knowledge base (edit) | ✓ | ✓ | – | – | – | – |
+| Recruitment, assets, analytics | ✓ | ✓ | ✓ | – | – | – |
+| Assets: see items assigned to me | ✓ | ✓ | ✓ | ✓ | ✓ (rules) | ✓ (rules) |
+| Org chart | ✓ | ✓ | ✓ | ✓ | – | – |
+| System (health, errors, migration) | ✓ | ✓ | – | – | – | – |
 
 The UI matrix is `src/domain/roles/index.ts → ACCESS_MATRIX`; the same rules
 are enforced server-side in `firestore.rules`. Stored payroll amounts are
@@ -210,7 +223,67 @@ engine never silently changes pay.
   salary jumps, unusual site totals. Shown before approving payroll; they
   never change attendance or pay (a future ML model can add findings there).
 
-## 7. Week-definition migration note
+## 7. Employee self-service, HR assistant, recruitment, assets, org chart, analytics
+
+* **My Portal** (`/dashboard/me`): every employee sees their own weekly
+  attendance (per site, shift and OT), stored payslips with a branded **PDF
+  download** (`lib/payslip-pdf.ts` — prints only the stored figures), their
+  advances (and can request one; managers are notified) and loans. Firestore
+  rules only return the person's own records.
+* **HR Assistant** (`/dashboard/assistant`, `domain/hr-assistant`):
+  1. personal questions ("how many leave days do I have left?", "explain my
+     last payslip", "status of my advance", "my loan balance") are answered
+     from the person's own records only;
+  2. policy questions use retrieval (BM25 over built-in rules generated from
+     the same constants the payroll engine uses + HR documents that
+     Owner/CEO add in the Knowledge base tab, with "everyone" / "managers"
+     audiences enforced by the rules);
+  3. with `NEXT_PUBLIC_AI_ENDPOINT` set, the retrieved passages go to the
+     ai-service and Claude writes the answer **only from those passages**,
+     citing them; otherwise the most relevant sentences are quoted. Every
+     answer shows its sources; when nothing matches it says so instead of
+     guessing.
+* **Recruitment** (`/dashboard/recruitment`, `domain/recruitment`): job
+  postings with required / nice-to-have skills and minimum experience;
+  candidates' CV text → skills extracted from a construction vocabulary →
+  transparent score (70 % required skills, 20 % nice-to-have, 10 %
+  experience) with matched / missing skills shown. **No automatic
+  rejection:** the list is only sorted; each stage change is a person's
+  click (recorded as `stageChangedBy`), rejection needs a written reason, and
+  the Firestore rules enforce both.
+* **Assets** (`/dashboard/assets`, `domain/assets`): register tools,
+  equipment, safety gear, IT; assign to an employee and/or site, return,
+  maintenance, back in service, retire. Every change is kept in the asset's
+  history and the audit log; assets are never deleted.
+* **Org chart** (`/dashboard/org-chart`, `domain/org`): Owner → CEO →
+  Manager → Supervisor → site staff (placed under the supervisor of their
+  site) and drivers under a manager; "Reports to" on the employee edit page
+  overrides the line. Cycles are prevented.
+* **Analytics** (`/dashboard/analytics`, `domain/analytics`): headcount by
+  role, weekly earnings and OT trends, top OT, site utilisation (worker-days,
+  visits, OT, labour cost) for 4–26 weeks. It runs `computePayroll()` week by
+  week, so the numbers equal Payroll/Reports. Table view available.
+* **Email / SMS** (`services/external-notify.ts`): when the notification
+  service is configured, notifications to a person also go by SMS (Settings →
+  Notifications → SMS) and/or email. Unconfigured channels are skipped, never
+  faked.
+
+## 8. Monitoring and the one-off legacy migration
+
+* Uncaught browser errors and page crashes (`app/error.tsx`,
+  `app/global-error.tsx`, window handlers) are written to `clientErrors`
+  (deduplicated, max 20 per session) and listed on **System** with the health
+  of Firestore and both backend services.
+* **Legacy attendance migration** (System page): *Check (dry run)* lists
+  every worker-day still stored under old random-ID documents; *Migrate*
+  writes the deterministic document (`{workerId}_{date}` /
+  `{workerId}_{date}_driver`) and flags the old ones `superseded` — nothing
+  is deleted. A unit test proves `normalizeAttendance()` gives identical
+  shifts and OT before and after, and that a second run does nothing.
+  Payroll already reads legacy data correctly, so this step is optional
+  housekeeping. Run it once, outside payroll approval.
+
+## 9. Week-definition migration note
 
 Earlier versions used a Sunday→Saturday payroll week. Stored payroll keeps
 its own `weekStartDate`; the payroll page shows legacy records for the
@@ -219,7 +292,7 @@ the transition week.
 
 ---
 
-## 8. Testing
+## 10. Testing
 
 ```bash
 npm run typecheck    # TypeScript
@@ -228,6 +301,8 @@ npm test             # unit tests: payroll engine, attendance persistence, dates
 TZ=Pacific/Kiritimati npm test   # same results in any timezone
 npm run test:rules   # Firestore security rules on the emulator (needs Java)
 npm run build
+cd backend/ai-service && python -m pytest -q            # backend services
+cd backend/notification-service && python -m pytest -q
 ```
 
 GitHub Actions (`.github/workflows/ci.yml`) runs all of the above — including
@@ -240,9 +315,15 @@ driver. Never test on production payroll data.
 
 ---
 
-## 9. Deployment
+## 11. Deployment
 
-GitHub Actions (`.github/workflows/deploy.yml`) builds the
-static export and publishes to GitHub Pages; Firebase config comes from
-repository secrets. Firestore rules are deployed separately with the
-Firebase CLI (see §3 for the order).
+| Workflow | When | Needs |
+|---|---|---|
+| `ci.yml` | every push / PR | nothing (placeholders) |
+| `deploy.yml` → **production** (GitHub Pages) | push to `main` | secrets `NEXT_PUBLIC_FIREBASE_*`; optional variables `NEXT_PUBLIC_AI_ENDPOINT`, `NEXT_PUBLIC_NOTIFY_ENDPOINT` |
+| `deploy-staging.yml` → **staging** (Firebase Hosting channel `staging`, plus a preview URL per PR) | push to `staging`, PRs | secret `FIREBASE_SERVICE_ACCOUNT`; optional `STAGING_FIREBASE_*` for a separate staging project |
+| `deploy-backend.yml` → Cloud Run | manual | secret `GCP_SA_KEY`; variables `GCP_PROJECT_ID`, `GCP_REGION`, `ALLOWED_ORIGINS` |
+
+Firestore rules are deployed separately with the Firebase CLI (see §3 for the
+order). Release flow: merge to `staging` → check the staging URL → merge to
+`main`.

@@ -28,6 +28,14 @@ export interface WeeklyPayroll {
   regularEarnings: number;
   overtimeEarnings: number;
   transportAllowance?: number;
+  transportBasis?: string;
+  /** Stored by the payroll engine (v2) at approval time */
+  workerId?: string;
+  dailyRate?: number;
+  otRate?: number;
+  siteVisits?: number;
+  advancesCarriedForward?: Array<{ advanceId: string; amount: number; date?: string }>;
+  anomalies?: string[];
   bonuses: BonusEntry[];
   totalEarnings: number;
   

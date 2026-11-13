@@ -4,6 +4,13 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { 
+  UserCircle2,
+  Bot,
+  Briefcase,
+  Package,
+  Network,
+  LineChart,
+  Activity,
   CalendarDays,
   Building2,
   LayoutDashboard,
@@ -54,6 +61,18 @@ const navItems = [
     area: 'approvals' as AppArea,
   },
   {
+    title: "My Portal",
+    href: ROUTES.MY_PORTAL,
+    icon: UserCircle2,
+    area: 'self_service' as AppArea,
+  },
+  {
+    title: "HR Assistant",
+    href: ROUTES.HR_ASSISTANT,
+    icon: Bot,
+    area: 'hr_assistant' as AppArea,
+  },
+  {
     title: "Employees",
     href: ROUTES.EMPLOYEES.LIST,
     icon: Users,
@@ -102,6 +121,30 @@ const navItems = [
     area: 'transport' as AppArea,
   },
   {
+    title: "Recruitment",
+    href: ROUTES.RECRUITMENT,
+    icon: Briefcase,
+    area: 'recruitment' as AppArea,
+  },
+  {
+    title: "Assets",
+    href: ROUTES.ASSETS,
+    icon: Package,
+    area: 'assets' as AppArea,
+  },
+  {
+    title: "Org Chart",
+    href: ROUTES.ORG_CHART,
+    icon: Network,
+    area: 'org_chart' as AppArea,
+  },
+  {
+    title: "Analytics",
+    href: ROUTES.ANALYTICS,
+    icon: LineChart,
+    area: 'analytics' as AppArea,
+  },
+  {
     title: "Reports",
     href: ROUTES.REPORTS.LIST,
     icon: BarChart3,
@@ -112,6 +155,12 @@ const navItems = [
     href: ROUTES.AUDIT_LOGS,
     icon: FileText,
     area: 'audit_logs' as AppArea,
+  },
+  {
+    title: "System",
+    href: ROUTES.SYSTEM,
+    icon: Activity,
+    area: 'system' as AppArea,
   },
   {
     title: "Settings",

@@ -131,3 +131,51 @@ describe('leave, notifications, transport', () => {
   });
 });
 
+
+describe('recruitment, assets, HR docs, monitoring, self-service', () => {
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'candidates/c1'), { jobId: 'j1', name: 'Nimal', stage: 'applied', matchScore: 40 });
+      await setDoc(doc(db, 'assets/as1'), { assetTag: 'KK-1', status: 'assigned', assignedToEmployeeId: 'helper', history: [] });
+      await setDoc(doc(db, 'assets/as2'), { assetTag: 'KK-2', status: 'available', assignedToEmployeeId: null, history: [] });
+      await setDoc(doc(db, 'hrDocuments/pub'), { title: 'Leave policy', audience: 'all', content: 'x' });
+      await setDoc(doc(db, 'hrDocuments/priv'), { title: 'Pay bands', audience: 'admins', content: 'y' });
+      await setDoc(doc(db, 'simpleAttendance/HELPER_2026-11-02'), { workerId: 'HELPER', date: '2026-11-02' });
+      await setDoc(doc(db, 'simpleAttendance/DRIVER_2026-11-02'), { workerId: 'DRIVER', date: '2026-11-02' });
+    });
+  });
+  it('candidates: never created pre-rejected, rejection needs a person and a reason', async () => {
+    await assertFails(setDoc(doc(as('manager'), 'candidates/c2'), { jobId: 'j1', name: 'X', stage: 'rejected' }));
+    await assertSucceeds(setDoc(doc(as('manager'), 'candidates/c2'), { jobId: 'j1', name: 'X', stage: 'applied' }));
+    await assertFails(updateDoc(doc(as('manager'), 'candidates/c1'), { stage: 'rejected', stageChangedBy: 'manager' }));
+    await assertFails(updateDoc(doc(as('manager'), 'candidates/c1'), { stage: 'screening', stageChangedBy: 'someoneElse' }));
+    await assertSucceeds(updateDoc(doc(as('manager'), 'candidates/c1'), { stage: 'rejected', stageChangedBy: 'manager', rejectionReason: 'No masonry experience' }));
+    await assertFails(getDoc(doc(as('helper'), 'candidates/c1')));
+  });
+  it('assets: staff see only what they hold; nobody deletes', async () => {
+    await assertSucceeds(getDoc(doc(as('helper'), 'assets/as1')));
+    await assertFails(getDoc(doc(as('helper'), 'assets/as2')));
+    await assertFails(updateDoc(doc(as('helper'), 'assets/as1'), { status: 'available' }));
+    await assertSucceeds(updateDoc(doc(as('manager'), 'assets/as2'), { status: 'maintenance' }));
+    await assertFails(deleteDoc(doc(as('owner'), 'assets/as2')));
+  });
+  it('HR documents: audience respected, only admins edit', async () => {
+    await assertSucceeds(getDoc(doc(as('helper'), 'hrDocuments/pub')));
+    await assertFails(getDoc(doc(as('helper'), 'hrDocuments/priv')));
+    await assertSucceeds(getDoc(doc(as('manager'), 'hrDocuments/priv')));
+    await assertFails(setDoc(doc(as('manager'), 'hrDocuments/new'), { title: 't', audience: 'all', content: 'c' }));
+    await assertSucceeds(setDoc(doc(as('ceo'), 'hrDocuments/new'), { title: 't', audience: 'all', content: 'c' }));
+  });
+  it('client errors: anyone signed in can report as themselves, only admins read', async () => {
+    await assertSucceeds(setDoc(doc(as('helper'), 'clientErrors/e1'), { message: 'boom', userId: 'helper', url: '/x' }));
+    await assertFails(setDoc(doc(as('helper'), 'clientErrors/e2'), { message: 'boom', userId: 'owner', url: '/x' }));
+    await assertFails(setDoc(doc(as('helper'), 'clientErrors/e3'), { message: 'x'.repeat(5000), url: '/x' }));
+    await assertFails(getDoc(doc(as('helper'), 'clientErrors/e1')));
+    await assertSucceeds(getDoc(doc(as('owner'), 'clientErrors/e1')));
+  });
+  it('self-service: own attendance only', async () => {
+    await assertSucceeds(getDoc(doc(as('helper'), 'simpleAttendance/HELPER_2026-11-02')));
+    await assertFails(getDoc(doc(as('helper'), 'simpleAttendance/DRIVER_2026-11-02')));
+  });
+});
